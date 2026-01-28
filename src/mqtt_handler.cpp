@@ -122,6 +122,11 @@ void MQTTHandler::processPublishStateMachine() {
 
         case MqttPublishState::DISC_NIGHT_MODE:
             publishNightModeSwitchDiscovery();
+            _publishState = MqttPublishState::DISC_TAG_SCANNED_TRIGGER;
+            break;
+
+        case MqttPublishState::DISC_TAG_SCANNED_TRIGGER:
+            publishTagScannedTriggerDiscovery();
             _publishState = MqttPublishState::DISC_DONE;
             break;
 
@@ -193,10 +198,12 @@ void MQTTHandler::publishTagScanned(const char* uid) {
 
     String base = getBaseTopic();
 
-    // Publish to tag/scanned topic (for automations)
-    _mqttClient.publish((base + "/tag/scanned").c_str(), uid, false);
+    // Publish JSON to tag/scanned topic (for HA device trigger automations)
+    // Format: {"uid": "XX:XX:XX:XX"} - allows use in automation conditions
+    String jsonPayload = "{\"uid\":\"" + String(uid) + "\"}";
+    _mqttClient.publish((base + "/tag/scanned").c_str(), jsonPayload.c_str(), false);
 
-    // Also update retained last_uid
+    // Also update retained last_uid (plain text for easy display)
     _mqttClient.publish((base + "/last_uid").c_str(), uid, true);
 
     // Update tag present
@@ -315,6 +322,25 @@ void MQTTHandler::publishNightModeSwitchDiscovery() {
     p += "\"dev\":{\"ids\":[\"" + devId + "\"]}}";
 
     String topic = String(MQTT_DISCOVERY_PREFIX) + "/switch/nfcr_" + _deviceId + "_night/config";
+    _mqttClient.publish(topic.c_str(), p.c_str(), true);
+}
+
+void MQTTHandler::publishTagScannedTriggerDiscovery() {
+    String b = getBaseTopic();
+    String devId = "nfc_reader_" + _deviceId;
+
+    // Home Assistant device trigger for tag scanned events
+    // Fires on ANY tag scan - use trigger.payload_json.uid in conditions/templates
+    // Example condition: {{ trigger.payload_json.uid == '5C:9E:35:4A' }}
+    String p = "{\"automation_type\":\"trigger\",";
+    p += "\"type\":\"tag_scanned\",";
+    p += "\"subtype\":\"any\",";
+    p += "\"topic\":\"" + b + "/tag/scanned\",";
+    p += "\"value_template\":\"{{ value_json.uid }}\",";
+    p += "\"dev\":{\"ids\":[\"" + devId + "\"],";
+    p += "\"name\":\"NFC Reader\",\"mf\":\"DIY\",\"mdl\":\"ESP32-C3 + PN532\",\"sw\":\"" FIRMWARE_VERSION "\"}}";
+
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/device_automation/nfcr_" + _deviceId + "_scan/config";
     _mqttClient.publish(topic.c_str(), p.c_str(), true);
 }
 

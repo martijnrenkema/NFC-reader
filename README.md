@@ -88,26 +88,65 @@ pio run -e esp32c3_ota -t upload
 
 ## Home Assistant Automation
 
-### NFC Tag Toggle
+### Trigger on Specific NFC Tag (via Device Trigger)
+
+The NFC Reader registers as a device trigger in Home Assistant. You can create automations that trigger when a specific tag is scanned:
 
 ```yaml
 automation:
-  - alias: "NFC Tag Toggle Light"
+  - alias: "Kids Room Light - NFC Tag"
     trigger:
-      - platform: mqtt
-        topic: "nfc_reader_xxxx/tag/scanned"
-        payload: "04:A3:2B:1C:5D:6E:7F"
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>  # Find in HA device page
+        type: tag_scanned
+        subtype: any
+    condition:
+      - condition: template
+        value_template: "{{ trigger.payload_json.uid == '5C:9E:35:4A' }}"
     action:
       - service: light.toggle
         target:
-          entity_id: light.woonkamer
+          entity_id: light.kids_room
 ```
 
-### Night Mode (LED uit tijdens slaaptijd)
+### Multiple Tags with Choose
 
 ```yaml
 automation:
-  - alias: "NFC Reader Night Mode Aan"
+  - alias: "NFC Tag Actions"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>
+        type: tag_scanned
+        subtype: any
+    action:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload_json.uid == '5C:9E:35:4A' }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.bedroom
+          - conditions:
+              - condition: template
+                value_template: "{{ trigger.payload_json.uid == 'AA:BB:CC:DD' }}"
+            sequence:
+              - service: media_player.play_media
+                target:
+                  entity_id: media_player.speaker
+                data:
+                  media_content_id: "good_night_music"
+                  media_content_type: "music"
+```
+
+### Night Mode (disable LED during sleep)
+
+```yaml
+automation:
+  - alias: "NFC Reader Night Mode On"
     trigger:
       - platform: time
         at: "20:00:00"
@@ -116,7 +155,7 @@ automation:
         target:
           entity_id: switch.nfc_reader_night_mode
 
-  - alias: "NFC Reader Night Mode Uit"
+  - alias: "NFC Reader Night Mode Off"
     trigger:
       - platform: time
         at: "07:00:00"

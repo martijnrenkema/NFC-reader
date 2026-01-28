@@ -14,6 +14,7 @@ enum class MqttPublishState {
     DISC_TAG_PRESENT,
     DISC_WIFI_SIGNAL,
     DISC_NIGHT_MODE,
+    DISC_TAG_SCANNED_TRIGGER,
     DISC_DONE,
     // State publish states
     STATE_LAST_UID,
@@ -77,6 +78,7 @@ private:
     void publishTagPresentBinarySensorDiscovery();
     void publishWiFiSensorDiscovery();
     void publishNightModeSwitchDiscovery();
+    void publishTagScannedTriggerDiscovery();
 
     void subscribeToCommands();
     static void mqttCallback(char* topic, uint8_t* payload, unsigned int length);
