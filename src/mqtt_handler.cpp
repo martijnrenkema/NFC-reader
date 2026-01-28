@@ -126,7 +126,8 @@ void MQTTHandler::processPublishStateMachine() {
             break;
 
         case MqttPublishState::DISC_TAG_SCANNED_TRIGGER:
-            publishTagScannedTriggerDiscovery();
+            // Individual tag triggers are published dynamically when tags are scanned
+            // This keeps HA UI clean - only shows tags you've actually used
             _publishState = MqttPublishState::DISC_DONE;
             break;
 
@@ -198,12 +199,14 @@ void MQTTHandler::publishTagScanned(const char* uid) {
 
     String base = getBaseTopic();
 
-    // Publish JSON to tag/scanned topic (for HA device trigger automations)
-    // Format: {"uid": "XX:XX:XX:XX"} - allows use in automation conditions
-    String jsonPayload = "{\"uid\":\"" + String(uid) + "\"}";
-    _mqttClient.publish((base + "/tag/scanned").c_str(), jsonPayload.c_str(), false);
+    // Publish device trigger discovery for this specific tag
+    // This makes the tag appear as a selectable trigger in HA
+    publishTagTriggerDiscovery(uid);
 
-    // Also update retained last_uid (plain text for easy display)
+    // Publish to tag/scanned topic with UID as payload (for device trigger matching)
+    _mqttClient.publish((base + "/tag/scanned").c_str(), uid, false);
+
+    // Also update retained last_uid (for sensor display)
     _mqttClient.publish((base + "/last_uid").c_str(), uid, true);
 
     // Update tag present
@@ -326,22 +329,34 @@ void MQTTHandler::publishNightModeSwitchDiscovery() {
 }
 
 void MQTTHandler::publishTagScannedTriggerDiscovery() {
+    // Generic "any tag" trigger is no longer published
+    // Individual tag triggers are published when tags are scanned
+    // This keeps the HA UI clean with only tags you've actually used
+}
+
+void MQTTHandler::publishTagTriggerDiscovery(const char* uid) {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
+    String uidStr = String(uid);
 
-    // Home Assistant device trigger for tag scanned events
-    // Fires on ANY tag scan - use trigger.payload_json.uid in conditions/templates
-    // Example condition: {{ trigger.payload_json.uid == '5C:9E:35:4A' }}
+    // Create a safe ID from UID (replace : with _)
+    String safeUid = uidStr;
+    safeUid.replace(":", "_");
+
+    // Home Assistant device trigger for this specific tag
+    // Each scanned tag gets its own trigger in the HA automation UI
     String p = "{\"automation_type\":\"trigger\",";
     p += "\"type\":\"tag_scanned\",";
-    p += "\"subtype\":\"any\",";
+    p += "\"subtype\":\"" + uidStr + "\",";
     p += "\"topic\":\"" + b + "/tag/scanned\",";
-    p += "\"value_template\":\"{{ value_json.uid }}\",";
+    p += "\"payload\":\"" + uidStr + "\",";
     p += "\"dev\":{\"ids\":[\"" + devId + "\"],";
     p += "\"name\":\"NFC Reader\",\"mf\":\"DIY\",\"mdl\":\"ESP32-C3 + PN532\",\"sw\":\"" FIRMWARE_VERSION "\"}}";
 
-    String topic = String(MQTT_DISCOVERY_PREFIX) + "/device_automation/nfcr_" + _deviceId + "_scan/config";
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/device_automation/nfcr_" + _deviceId + "_tag_" + safeUid + "/config";
     _mqttClient.publish(topic.c_str(), p.c_str(), true);
+
+    Serial.printf("[MQTT] Published trigger for tag: %s\n", uid);
 }
 
 void MQTTHandler::subscribeToCommands() {

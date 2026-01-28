@@ -88,9 +88,14 @@ pio run -e esp32c3_ota -t upload
 
 ## Home Assistant Automation
 
-### Trigger on Specific NFC Tag (via Device Trigger)
+### Trigger on Specific NFC Tag
 
-The NFC Reader registers as a device trigger in Home Assistant. You can create automations that trigger when a specific tag is scanned:
+Each scanned tag automatically registers as a device trigger in Home Assistant. Simply scan your tags once, then create automations by selecting the specific tag from the dropdown:
+
+1. Scan your NFC tag on the reader
+2. In Home Assistant, create a new automation
+3. Select trigger: **Device → NFC Reader → tag_scanned [YOUR_UID]**
+4. Add your action - no conditions needed!
 
 ```yaml
 automation:
@@ -98,48 +103,47 @@ automation:
     trigger:
       - platform: device
         domain: mqtt
-        device_id: <your_device_id>  # Find in HA device page
+        device_id: <your_device_id>
         type: tag_scanned
-        subtype: any
-    condition:
-      - condition: template
-        value_template: "{{ trigger.payload_json.uid == '5C:9E:35:4A' }}"
+        subtype: "5C:9E:35:4A"  # Your tag's UID
     action:
       - service: light.toggle
         target:
           entity_id: light.kids_room
 ```
 
-### Multiple Tags with Choose
+### Multiple Tags
+
+Each tag gets its own trigger, so you can create separate automations for each tag, or combine them:
 
 ```yaml
 automation:
-  - alias: "NFC Tag Actions"
+  - alias: "Bedroom Light - Tag 1"
     trigger:
       - platform: device
         domain: mqtt
         device_id: <your_device_id>
         type: tag_scanned
-        subtype: any
+        subtype: "5C:9E:35:4A"
     action:
-      - choose:
-          - conditions:
-              - condition: template
-                value_template: "{{ trigger.payload_json.uid == '5C:9E:35:4A' }}"
-            sequence:
-              - service: light.turn_on
-                target:
-                  entity_id: light.bedroom
-          - conditions:
-              - condition: template
-                value_template: "{{ trigger.payload_json.uid == 'AA:BB:CC:DD' }}"
-            sequence:
-              - service: media_player.play_media
-                target:
-                  entity_id: media_player.speaker
-                data:
-                  media_content_id: "good_night_music"
-                  media_content_type: "music"
+      - service: light.turn_on
+        target:
+          entity_id: light.bedroom
+
+  - alias: "Play Music - Tag 2"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>
+        type: tag_scanned
+        subtype: "AA:BB:CC:DD"
+    action:
+      - service: media_player.play_media
+        target:
+          entity_id: media_player.speaker
+        data:
+          media_content_id: "good_night_music"
+          media_content_type: "music"
 ```
 
 ### Night Mode (disable LED during sleep)
