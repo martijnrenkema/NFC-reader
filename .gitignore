@@ -1,0 +1,22 @@
+# PlatformIO
+.pio/
+.vscode/
+.clangd/
+
+# Local development docs (not for GitHub)
+CLAUDE.md
+
+# Build artifacts
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+
+# macOS
+.DS_Store
+
+# IDE
+*.swp
+*.swo
+*~

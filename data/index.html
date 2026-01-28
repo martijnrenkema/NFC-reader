@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>NFC Reader</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <header>
+            <div class="logo">
+                <svg viewBox="0 0 24 24" width="32" height="32"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H4V4h16v16zM6 7h5v2H6V7zm5 8H6v-2h5v2zm5 2H6v-2h10v2zm2-8v2H8V9h10zm0 4H8v-2h10v2z"/></svg>
+                <span>NFC Reader</span>
+            </div>
+            <div class="status">
+                <span class="status-item"><span id="wifi-dot" class="dot"></span>WiFi</span>
+                <span class="status-item"><span id="mqtt-dot" class="dot"></span>MQTT</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- NFC Tag Section (Hero) -->
+            <section class="card nfc-hero">
+                <h3>Last Scanned Tag <span id="nfc-dot" class="dot small"></span></h3>
+                <div class="uid-display">
+                    <span class="uid" id="last-uid">--</span>
+                    <button class="copy-btn" id="copy-uid">Copy</button>
+                </div>
+                <div class="tag-status">
+                    <span id="tag-status">Tag Present:</span>
+                    <span id="tag-present-dot" class="dot"></span>
+                </div>
+                <div class="scan-time" id="scan-time"></div>
+            </section>
+
+            <!-- Scan History -->
+            <details class="card" id="history-section">
+                <summary>Scan History</summary>
+                <div class="scan-history" id="scan-history">
+                    <div class="no-scans">No scans yet</div>
+                </div>
+                <button id="clear-history" class="btn-sm danger" style="margin-top:12px">Clear History</button>
+            </details>
+
+            <!-- WiFi Settings -->
+            <details class="card">
+                <summary>WiFi Settings</summary>
+                <form id="wifi-form">
+                    <input type="text" id="w-ssid" placeholder="SSID" required>
+                    <input type="password" id="w-pass" placeholder="Password">
+                    <button type="submit" class="btn">Connect</button>
+                </form>
+                <div class="info">
+                    <span>Network: <b id="cur-ssid">--</b></span>
+                    <span>IP: <b id="cur-ip">--</b></span>
+                </div>
+            </details>
+
+            <!-- MQTT Settings -->
+            <details class="card">
+                <summary>MQTT Settings</summary>
+                <form id="mqtt-form">
+                    <div class="row-2">
+                        <input type="text" id="m-host" placeholder="Host" required>
+                        <input type="number" id="m-port" placeholder="Port" value="1883">
+                    </div>
+                    <input type="text" id="m-user" placeholder="Username">
+                    <input type="password" id="m-pass" placeholder="Password">
+                    <button type="submit" class="btn">Save</button>
+                </form>
+            </details>
+
+            <!-- Device Settings -->
+            <details class="card">
+                <summary>Device Settings</summary>
+
+                <!-- Night Mode Toggle -->
+                <div class="field-group night-mode-group">
+                    <label>Night Mode <span class="tooltip" title="Disable LED for bedroom use. Can be automated via MQTT/Home Assistant.">?</span></label>
+                    <div class="toggle-wrapper">
+                        <label class="toggle">
+                            <input type="checkbox" id="night-mode-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span id="night-mode-status" class="toggle-status">Off</span>
+                    </div>
+                </div>
+
+                <hr class="divider">
+
+                <form id="device-form">
+                    <div class="field-group">
+                        <label>Device Name <span class="tooltip" title="Name shown in Home Assistant">?</span></label>
+                        <input type="text" id="device-name" placeholder="NFC Reader" maxlength="31">
+                    </div>
+                    <button type="submit" class="btn">Save</button>
+                </form>
+            </details>
+
+            <!-- Security -->
+            <details class="card">
+                <summary>Security</summary>
+                <form id="pass-form">
+                    <div class="field-group">
+                        <label>OTA Password <small id="ota-status"></small></label>
+                        <input type="password" id="p-ota" placeholder="New OTA password (min 8 chars)">
+                    </div>
+                    <div class="field-group">
+                        <label>WiFi AP Password <small id="ap-status"></small></label>
+                        <input type="password" id="p-ap" placeholder="New AP password (min 8 chars)">
+                    </div>
+                    <button type="submit" class="btn">Save Passwords</button>
+                    <small class="hint">Device restart required after changing passwords</small>
+                </form>
+            </details>
+
+            <!-- System Logs -->
+            <details class="card" id="logs-section">
+                <summary>System Logs</summary>
+                <div class="logs-header">
+                    <button id="refresh-logs" class="btn-sm">Refresh</button>
+                    <button id="clear-logs" class="btn-sm danger">Clear</button>
+                </div>
+                <div id="logs-container" class="logs-container">
+                    <div class="log-loading">Loading logs...</div>
+                </div>
+            </details>
+
+            <!-- System -->
+            <details class="card">
+                <summary>System</summary>
+                <div class="info">
+                    <span>MAC: <b id="mac">--</b></span>
+                    <span>Signal: <b id="rssi">--</b> dBm</span>
+                </div>
+                <button id="reset" class="btn danger" style="margin-top:12px">Factory Reset</button>
+            </details>
+        </main>
+
+        <footer>
+            <a href="/update.html">Firmware Update</a>
+            <a href="https://github.com/martijnrenkema/NFC-reader" target="_blank" rel="noopener">GitHub</a>
+            <span class="version" id="footer-version">v--</span>
+        </footer>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
