@@ -2,6 +2,11 @@
 
 ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 
+<p align="center">
+  <img src="images/case.jpg" alt="NFC Reader Case" width="400"/>
+  <img src="images/webui.png" alt="Web Interface" width="200"/>
+</p>
+
 ## Features
 
 - **AP Mode on first boot**: `NFC-READER-XXXX` (last 4 hex of MAC)
@@ -22,6 +27,12 @@ ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 - PN532 NFC/RFID breakout board
 - LED (optional) + 330Ω resistor
 - Dupont wires
+
+### 3D Printed Case
+
+A compact case is available on MakerWorld that fits the PN532 + ESP32-C3 SuperMini combo perfectly:
+
+**[NFC Tag Reader Case on MakerWorld](https://makerworld.com/nl/models/1117728-nfc-tag-reader-esp8266-32-c6-c3-supermini-pn532)**
 
 ### Pinout
 
@@ -44,6 +55,19 @@ ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 SEL0: OFF
 SEL1: ON
 ```
+
+## LED Status Colors
+
+The built-in RGB LED on the ESP32-C3 SuperMini provides visual feedback:
+
+| Color | Pattern | Meaning |
+|-------|---------|---------|
+| 🔵 Light Blue | Fast blink | Connecting to WiFi |
+| 🟠 Orange | Slow pulse | AP mode (configuration portal) |
+| 🟢 Green | Soft pulse | Connected and idle |
+| 🔵 Cyan | Double flash | Tag scanned successfully |
+| 🔴 Red | Fast blink | Error |
+| ⚫ Off | - | Night mode enabled |
 
 ## Installation
 
