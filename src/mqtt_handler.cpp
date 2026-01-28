@@ -128,18 +128,8 @@ void MQTTHandler::processPublishStateMachine() {
         case MqttPublishState::DISC_TAG_SCANNED_TRIGGER:
             // Publish generic tag_scanned trigger (always available)
             publishTagScannedTriggerDiscovery();
-            // Also publish named triggers for all registered tags
-            {
-                uint8_t tagCount = storage.getRegisteredTagCount();
-                for (uint8_t i = 0; i < tagCount; i++) {
-                    TagEntry entry;
-                    if (storage.getRegisteredTag(i, entry)) {
-                        publishNamedTagTriggerDiscovery(entry.name);
-                        _mqttClient.loop();
-                        delay(20);  // Small delay between publishes
-                    }
-                }
-            }
+            // Named tag triggers will be published when tags are scanned
+            // This avoids blocking NVS reads during discovery
             _publishState = MqttPublishState::DISC_DONE;
             break;
 
@@ -214,19 +204,34 @@ void MQTTHandler::publishTagScanned(const char* uid) {
     // Publish to tag/scanned topic with UID as payload
     // HA device trigger will fire, user checks UID in automation condition
     _mqttClient.publish((base + "/tag/scanned").c_str(), uid, false);
+    _mqttClient.loop();
+    yield();
 
     // Also update retained last_uid (for sensor display)
     _mqttClient.publish((base + "/last_uid").c_str(), uid, true);
 
     // Update tag present
     _mqttClient.publish((base + "/tag_present").c_str(), "ON", true);
+    _mqttClient.loop();
+    yield();
 
     // Check if this is a registered tag - fire named trigger
+    // NVS read is quick, but yield after to give WiFi time
     const char* tagName = storage.getTagName(uid);
+    yield();
+
     if (tagName != nullptr && strlen(tagName) > 0) {
         // Publish to named tag topic for HA device trigger
         String namedTopic = base + "/tag/" + String(tagName);
         _mqttClient.publish(namedTopic.c_str(), uid, false);
+        _mqttClient.loop();
+        yield();
+
+        // Publish discovery for this named trigger (if not already)
+        publishNamedTagTriggerDiscovery(tagName);
+        _mqttClient.loop();
+        yield();
+
         Serial.printf("[MQTT] Published named tag: %s (%s)\n", tagName, uid);
     }
 
