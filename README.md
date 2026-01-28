@@ -4,38 +4,38 @@ ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 
 ## Features
 
-- **AP Mode bij eerste boot**: `NFC-READER-XXXX` (last 4 hex of MAC)
-- **Web interface** voor WiFi/MQTT configuratie
+- **AP Mode on first boot**: `NFC-READER-XXXX` (last 4 hex of MAC)
+- **Web interface** for WiFi/MQTT configuration
 - **OTA updates** via web interface
-- **MQTT** met Home Assistant auto-discovery
-- **Last Scanned UID** sensor voor automations
-- **RGB Status LED** met kleur-gecodeerde feedback
-- **Night mode** - LED uitschakelen via MQTT/web (ideaal voor slaapkamer)
-- **Scan history** (laatste 10 scans)
+- **MQTT** with Home Assistant auto-discovery
+- **Device trigger** for tag-specific automations
+- **RGB Status LED** with color-coded feedback
+- **Night mode** - disable LED via MQTT/web (ideal for bedroom)
+- **Scan history** (last 10 scans)
 
 ## Hardware
 
-### Benodigdheden
+### Requirements
 
 - ESP32-C3 SuperMini
 - PN532 NFC/RFID breakout board
-- LED (optioneel) + 330Ω weerstand
-- Dupont kabeltjes
+- LED (optional) + 330Ω resistor
+- Dupont wires
 
 ### Pinout
 
-| ESP32-C3 | PN532 | Beschrijving |
-|----------|-------|--------------|
-| 3.3V | VCC | Voeding |
+| ESP32-C3 | PN532 | Description |
+|----------|-------|-------------|
+| 3.3V | VCC | Power |
 | GND | GND | Ground |
 | GPIO4 | SDA | I2C Data |
 | GPIO5 | SCL | I2C Clock |
-| GPIO3 | RSTO | Reset (optioneel) |
+| GPIO3 | RSTO | Reset (optional) |
 
-| ESP32-C3 | Component | Beschrijving |
-|----------|-----------|--------------|
-| GPIO8 | Ingebouwd | RGB LED (WS2812B) |
-| GPIO10 | Extern | LED Anode (via 330Ω, optioneel) |
+| ESP32-C3 | Component | Description |
+|----------|-----------|-------------|
+| GPIO8 | Built-in | RGB LED (WS2812B) |
+| GPIO10 | External | LED Anode (via 330Ω, optional) |
 
 ### PN532 DIP Switch (I2C mode)
 
@@ -44,47 +44,47 @@ SEL0: OFF
 SEL1: ON
 ```
 
-## Installatie
+## Installation
 
-### Eerste keer (USB)
+### First time (USB)
 
 ```bash
-# Bouw firmware
+# Build firmware
 pio run -e esp32c3_supermini
 
 # Flash firmware
 pio run -e esp32c3_supermini -t upload
 
-# Bouw en flash filesystem
+# Build and flash filesystem
 pio run -e esp32c3_supermini -t buildfs
 pio run -e esp32c3_supermini -t uploadfs
 ```
 
 ### OTA updates
 
-Na eerste configuratie:
+After initial configuration:
 
 ```bash
 pio run -e esp32c3_ota -t upload
 ```
 
-## Configuratie
+## Configuration
 
-1. Verbind met WiFi netwerk `NFC-READER-XXXX` (password: `nfc123`)
+1. Connect to WiFi network `NFC-READER-XXXX` (password: `nfc123`)
 2. Open http://192.168.4.1
-3. Configureer WiFi credentials
-4. Configureer MQTT broker
+3. Configure WiFi credentials
+4. Configure MQTT broker
 
 ## MQTT Topics
 
-| Topic | Beschrijving |
-|-------|--------------|
-| `nfc_reader_xxxx/tag/scanned` | Gepubliceerd bij elke scan |
-| `nfc_reader_xxxx/last_uid` | Laatste UID (retained) |
+| Topic | Description |
+|-------|-------------|
+| `nfc_reader_xxxx/tag/scanned` | Published on each scan (JSON with UID) |
+| `nfc_reader_xxxx/last_uid` | Last scanned UID (retained) |
 | `nfc_reader_xxxx/tag_present` | ON/OFF |
 | `nfc_reader_xxxx/availability` | online/offline |
 | `nfc_reader_xxxx/night_mode` | Night mode status ON/OFF |
-| `nfc_reader_xxxx/night_mode/set` | Night mode command (stuur ON/OFF) |
+| `nfc_reader_xxxx/night_mode/set` | Night mode command (send ON/OFF) |
 
 ## Home Assistant Automation
 
