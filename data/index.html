@@ -34,6 +34,23 @@
                 <div class="scan-time" id="scan-time"></div>
             </section>
 
+            <!-- Tag Registry -->
+            <details class="card" id="tags-section">
+                <summary>Tag Registry <span class="tag-count" id="tag-count"></span></summary>
+                <p class="hint">Register tags with names to create named triggers in Home Assistant.</p>
+                <form id="tag-form" class="tag-form">
+                    <div class="row-2">
+                        <input type="text" id="tag-uid" placeholder="UID (scan a tag first)" readonly>
+                        <button type="button" id="use-last-uid" class="btn-sm">Use Last UID</button>
+                    </div>
+                    <input type="text" id="tag-name" placeholder="Name (e.g., Bedroom_Light)" maxlength="31">
+                    <button type="submit" class="btn">Register Tag</button>
+                </form>
+                <div class="registered-tags" id="registered-tags">
+                    <div class="no-tags">No tags registered</div>
+                </div>
+            </details>
+
             <!-- Scan History -->
             <details class="card" id="history-section">
                 <summary>Scan History</summary>

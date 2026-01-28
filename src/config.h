@@ -68,6 +68,8 @@
 #define NVS_DEVICE_NAME         "device_name"
 #define NVS_OTA_PASSWORD        "ota_pass"
 #define NVS_AP_PASSWORD         "ap_pass"
+#define NVS_TAG_NAMESPACE       "nfctags"
+#define NVS_TAG_COUNT           "tag_count"
 
 // ===========================================
 // LED Patterns (ms)
@@ -84,7 +86,7 @@
 // ===========================================
 // Firmware Version
 // ===========================================
-#define FIRMWARE_VERSION        "1.4.0"
+#define FIRMWARE_VERSION        "1.5.0"
 
 // ===========================================
 // GitHub Repo (for updates)

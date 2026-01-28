@@ -126,8 +126,20 @@ void MQTTHandler::processPublishStateMachine() {
             break;
 
         case MqttPublishState::DISC_TAG_SCANNED_TRIGGER:
-            // Individual tag triggers are published dynamically when tags are scanned
-            // This keeps HA UI clean - only shows tags you've actually used
+            // Publish generic tag_scanned trigger (always available)
+            publishTagScannedTriggerDiscovery();
+            // Also publish named triggers for all registered tags
+            {
+                uint8_t tagCount = storage.getRegisteredTagCount();
+                for (uint8_t i = 0; i < tagCount; i++) {
+                    TagEntry entry;
+                    if (storage.getRegisteredTag(i, entry)) {
+                        publishNamedTagTriggerDiscovery(entry.name);
+                        _mqttClient.loop();
+                        delay(20);  // Small delay between publishes
+                    }
+                }
+            }
             _publishState = MqttPublishState::DISC_DONE;
             break;
 
@@ -208,6 +220,15 @@ void MQTTHandler::publishTagScanned(const char* uid) {
 
     // Update tag present
     _mqttClient.publish((base + "/tag_present").c_str(), "ON", true);
+
+    // Check if this is a registered tag - fire named trigger
+    const char* tagName = storage.getTagName(uid);
+    if (tagName != nullptr && strlen(tagName) > 0) {
+        // Publish to named tag topic for HA device trigger
+        String namedTopic = base + "/tag/" + String(tagName);
+        _mqttClient.publish(namedTopic.c_str(), uid, false);
+        Serial.printf("[MQTT] Published named tag: %s (%s)\n", tagName, uid);
+    }
 
     Serial.printf("[MQTT] Published tag: %s\n", uid);
 }
@@ -343,9 +364,25 @@ void MQTTHandler::publishTagScannedTriggerDiscovery() {
     _mqttClient.publish(topic.c_str(), p.c_str(), true);
 }
 
-void MQTTHandler::publishTagTriggerDiscovery(const char* uid) {
-    // No longer used - keeping function to avoid header changes
-    (void)uid;
+void MQTTHandler::publishNamedTagTriggerDiscovery(const char* name) {
+    if (!name || strlen(name) == 0) return;
+
+    String b = getBaseTopic();
+    String devId = "nfc_reader_" + _deviceId;
+    String safeName = String(name);
+
+    // Device trigger for named tag
+    // Shows as "tag_scanned <name>" in HA device triggers
+    String p = "{\"automation_type\":\"trigger\",";
+    p += "\"type\":\"tag_scanned\",";
+    p += "\"subtype\":\"" + safeName + "\",";
+    p += "\"topic\":\"" + b + "/tag/" + safeName + "\",";
+    p += "\"dev\":{\"ids\":[\"" + devId + "\"],";
+    p += "\"name\":\"NFC Reader\",\"mf\":\"DIY\",\"mdl\":\"ESP32-C3 + PN532\",\"sw\":\"" FIRMWARE_VERSION "\"}}";
+
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/device_automation/nfcr_" + _deviceId + "_" + safeName + "/config";
+    _mqttClient.publish(topic.c_str(), p.c_str(), true);
+    Serial.printf("[MQTT] Published named trigger: %s\n", name);
 }
 
 void MQTTHandler::subscribeToCommands() {

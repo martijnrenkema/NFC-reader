@@ -98,3 +98,17 @@ footer a:hover{text-decoration:underline}
 .toggle-status{color:var(--dim);font-size:.85rem;transition:color .2s}
 .toggle-status.active{color:var(--accent)}
 .divider{border:none;border-top:1px solid rgba(255,255,255,0.1);margin:16px 0}
+
+/* Tag Registry */
+.tag-count{color:var(--dim);font-size:.8rem;font-weight:normal}
+.tag-form{margin-bottom:16px}
+.tag-form .row-2{grid-template-columns:1fr auto}
+.tag-form .row-2 input{min-width:0}
+.registered-tags{max-height:250px;overflow-y:auto}
+.tag-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.tag-item:last-child{border-bottom:none}
+.tag-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.tag-name{font-weight:500;color:var(--text)}
+.tag-uid{font-family:'SF Mono',Monaco,'Courier New',monospace;font-size:.75rem;color:var(--dim)}
+.no-tags{color:var(--dim);text-align:center;padding:20px;font-size:.9rem}
+.btn-sm.danger{background:var(--red);font-size:.75rem;padding:6px 10px}

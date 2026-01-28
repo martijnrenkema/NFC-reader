@@ -281,6 +281,70 @@ void WebServer::setupRoutes() {
         }
     );
 
+    // Tag Registry - List all registered tags
+    _server->on("/api/tags", HTTP_GET, [](AsyncWebServerRequest* request) {
+        DynamicJsonDocument doc(2048);
+        JsonArray tags = doc.createNestedArray("tags");
+
+        uint8_t count = storage.getRegisteredTagCount();
+        for (uint8_t i = 0; i < count; i++) {
+            TagEntry entry;
+            if (storage.getRegisteredTag(i, entry)) {
+                JsonObject tag = tags.createNestedObject();
+                tag["uid"] = entry.uid;
+                tag["name"] = entry.name;
+            }
+        }
+        doc["count"] = count;
+        doc["max"] = MAX_REGISTERED_TAGS;
+
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    // Tag Registry - Register a tag
+    _server->on("/api/tags", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!request->hasParam("uid", true) || !request->hasParam("name", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing uid or name parameter\"}");
+            return;
+        }
+
+        String uid = request->getParam("uid", true)->value();
+        String name = request->getParam("name", true)->value();
+
+        if (uid.length() == 0 || name.length() == 0) {
+            request->send(400, "application/json", "{\"error\":\"UID and name cannot be empty\"}");
+            return;
+        }
+
+        if (storage.registerTag(uid.c_str(), name.c_str())) {
+            // Republish MQTT discovery to include the new tag trigger
+            if (mqttHandler.isConnected()) {
+                mqttHandler.publishDiscovery();
+            }
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Tag registered\"}");
+        } else {
+            request->send(500, "application/json", "{\"error\":\"Failed to register tag (registry full or invalid name)\"}");
+        }
+    });
+
+    // Tag Registry - Delete a tag
+    _server->on("/api/tags", HTTP_DELETE, [](AsyncWebServerRequest* request) {
+        if (!request->hasParam("uid")) {
+            request->send(400, "application/json", "{\"error\":\"Missing uid parameter\"}");
+            return;
+        }
+
+        String uid = request->getParam("uid")->value();
+
+        if (storage.unregisterTag(uid.c_str())) {
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Tag unregistered\"}");
+        } else {
+            request->send(404, "application/json", "{\"error\":\"Tag not found\"}");
+        }
+    });
+
     // Captive portal detection endpoints
     _server->on("/generate_204", HTTP_GET, [](AsyncWebServerRequest* request) {
         request->send(204);

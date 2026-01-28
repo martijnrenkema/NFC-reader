@@ -4,6 +4,15 @@
 #include <Arduino.h>
 #include "config.h"
 
+// Maximum number of tags in registry
+#define MAX_REGISTERED_TAGS 50
+
+// Tag entry for registry
+struct TagEntry {
+    char uid[24];       // UID string (e.g., "C3:7B:70:19")
+    char name[32];      // User-friendly name (e.g., "Bedroom Light")
+};
+
 // Settings structure - stored in NVS
 struct NFCSettings {
     // WiFi
@@ -56,6 +65,14 @@ public:
 
     // Factory reset
     void reset();
+
+    // Tag registry
+    bool registerTag(const char* uid, const char* name);
+    bool unregisterTag(const char* uid);
+    const char* getTagName(const char* uid);
+    uint8_t getRegisteredTagCount();
+    bool getRegisteredTag(uint8_t index, TagEntry& entry);
+    void clearTagRegistry();
 
 private:
     NFCSettings _settings;

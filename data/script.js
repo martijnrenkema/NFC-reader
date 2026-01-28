@@ -376,6 +376,112 @@ $('#logs-section')?.addEventListener('toggle', function() {
     if (this.open) fetchLogs();
 });
 
+// Tag Registry
+async function fetchTags() {
+    try {
+        const r = await fetch('/api/tags');
+        const d = await r.json();
+        renderTags(d.tags || []);
+        const countEl = $('#tag-count');
+        if (countEl) {
+            countEl.textContent = d.count > 0 ? `(${d.count}/${d.max})` : '';
+        }
+    } catch(e) {
+        console.error(e);
+        $('#registered-tags').innerHTML = '<div class="no-tags">Error loading tags</div>';
+    }
+}
+
+function renderTags(tags) {
+    const container = $('#registered-tags');
+    if (!tags || tags.length === 0) {
+        container.innerHTML = '<div class="no-tags">No tags registered</div>';
+        return;
+    }
+
+    const html = tags.map(tag => `
+        <div class="tag-item">
+            <div class="tag-info">
+                <span class="tag-name">${escapeHtml(tag.name)}</span>
+                <span class="tag-uid">${escapeHtml(tag.uid)}</span>
+            </div>
+            <button class="btn-sm danger delete-tag" data-uid="${escapeHtml(tag.uid)}">Delete</button>
+        </div>
+    `).join('');
+
+    container.innerHTML = html;
+
+    // Add delete handlers
+    container.querySelectorAll('.delete-tag').forEach(btn => {
+        btn.onclick = async () => {
+            const uid = btn.dataset.uid;
+            if (confirm(`Delete tag "${uid}"?`)) {
+                try {
+                    const r = await fetch(`/api/tags?uid=${encodeURIComponent(uid)}`, { method: 'DELETE' });
+                    const d = await r.json();
+                    if (d.success) {
+                        fetchTags();
+                    } else {
+                        alert(d.error || 'Error deleting tag');
+                    }
+                } catch(e) {
+                    alert('Error deleting tag');
+                }
+            }
+        };
+    });
+}
+
+// Use last scanned UID button
+$('#use-last-uid').onclick = () => {
+    const lastUid = $('#last-uid').textContent;
+    if (lastUid && lastUid !== '--') {
+        $('#tag-uid').value = lastUid;
+        $('#tag-name').focus();
+    } else {
+        alert('No tag scanned yet');
+    }
+};
+
+// Tag registration form
+$('#tag-form').onsubmit = async e => {
+    e.preventDefault();
+    const uid = $('#tag-uid').value.trim();
+    const name = $('#tag-name').value.trim();
+
+    if (!uid) {
+        alert('Please scan a tag first and click "Use Last UID"');
+        return;
+    }
+    if (!name) {
+        alert('Please enter a name for the tag');
+        return;
+    }
+
+    try {
+        const r = await fetch('/api/tags', {
+            method: 'POST',
+            body: new URLSearchParams({ uid, name })
+        });
+        const d = await r.json();
+        if (d.success) {
+            $('#tag-uid').value = '';
+            $('#tag-name').value = '';
+            fetchTags();
+            alert('Tag registered! A new trigger will appear in Home Assistant.');
+        } else {
+            alert(d.error || 'Error registering tag');
+        }
+    } catch(e) {
+        alert('Error registering tag');
+    }
+};
+
+// Load tags when section is opened
+$('#tags-section')?.addEventListener('toggle', function() {
+    if (this.open) fetchTags();
+});
+
 // Night mode toggle
 const nightToggle = $('#night-mode-toggle');
 if (nightToggle) {

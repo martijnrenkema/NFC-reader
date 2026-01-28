@@ -79,7 +79,7 @@ private:
     void publishWiFiSensorDiscovery();
     void publishNightModeSwitchDiscovery();
     void publishTagScannedTriggerDiscovery();
-    void publishTagTriggerDiscovery(const char* uid);  // Per-tag trigger
+    void publishNamedTagTriggerDiscovery(const char* name);  // Named tag trigger
 
     void subscribeToCommands();
     static void mqttCallback(char* topic, uint8_t* payload, unsigned int length);
