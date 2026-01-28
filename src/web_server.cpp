@@ -345,6 +345,23 @@ void WebServer::setupRoutes() {
         }
     });
 
+    // Remove old UID-based triggers from Home Assistant (v1.3.0 cleanup)
+    _server->on("/api/cleanup_trigger", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!request->hasParam("uid", true)) {
+            request->send(400, "application/json", "{\"error\":\"Missing uid parameter\"}");
+            return;
+        }
+
+        String uid = request->getParam("uid", true)->value();
+
+        if (mqttHandler.isConnected()) {
+            mqttHandler.removeOldTagTriggers(uid.c_str());
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Trigger removed from Home Assistant\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"MQTT not connected\"}");
+        }
+    });
+
     // Captive portal detection endpoints
     _server->on("/generate_204", HTTP_GET, [](AsyncWebServerRequest* request) {
         request->send(204);

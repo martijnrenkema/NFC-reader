@@ -482,6 +482,31 @@ $('#tags-section')?.addEventListener('toggle', function() {
     if (this.open) fetchTags();
 });
 
+// Cleanup old UID-based triggers
+$('#cleanup-btn').onclick = async () => {
+    const uid = $('#cleanup-uid').value.trim();
+    if (!uid) {
+        alert('Enter a UID to remove');
+        return;
+    }
+
+    try {
+        const r = await fetch('/api/cleanup_trigger', {
+            method: 'POST',
+            body: new URLSearchParams({ uid })
+        });
+        const d = await r.json();
+        if (d.success) {
+            alert('Trigger removed from Home Assistant');
+            $('#cleanup-uid').value = '';
+        } else {
+            alert(d.error || 'Error removing trigger');
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
+};
+
 // Night mode toggle
 const nightToggle = $('#night-mode-toggle');
 if (nightToggle) {

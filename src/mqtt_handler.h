@@ -37,6 +37,7 @@ public:
     // Home Assistant Discovery (non-blocking)
     void publishDiscovery();
     void removeDiscovery();
+    void removeOldTagTriggers(const char* uid);  // Remove UID-based triggers from old version
 
     // State publishing (non-blocking)
     void publishState();
