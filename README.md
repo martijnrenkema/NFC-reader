@@ -8,7 +8,8 @@ ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 - **Web interface** for WiFi/MQTT configuration
 - **OTA updates** via web interface
 - **MQTT** with Home Assistant auto-discovery
-- **Device trigger** for tag-specific automations
+- **Tag Registry** - name your tags for easy Home Assistant automations
+- **Device triggers** for tag-specific automations (named or generic)
 - **RGB Status LED** with color-coded feedback
 - **Night mode** - disable LED via MQTT/web (ideal for bedroom)
 - **Scan history** (last 10 scans)
@@ -88,11 +89,35 @@ pio run -e esp32c3_ota -t upload
 
 ## Home Assistant Automation
 
-### Trigger on Specific NFC Tag
+### Option 1: Named Tags (Recommended)
 
-1. **Scan your tag** on the reader to see its UID
-2. **Copy the UID** from the web interface or the `sensor.nfc_reader_last_scanned_uid` entity
-3. **Create automation** with the tag_scanned trigger and a condition for your UID
+Register your tags with names in the web interface for easy automations:
+
+1. **Scan your tag** on the reader
+2. **Open the web interface** and go to "Tag Registry"
+3. **Click "Use Last UID"** and enter a name (e.g., `Bedroom_Light`)
+4. **Click "Register Tag"**
+
+Now you can use the named trigger directly in Home Assistant:
+
+```yaml
+automation:
+  - alias: "Bedroom Light - NFC Tag"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>  # Find in HA device page
+        type: tag_scanned
+        subtype: Bedroom_Light  # Your tag name
+    action:
+      - service: light.toggle
+        target:
+          entity_id: light.bedroom
+```
+
+### Option 2: Generic Trigger with UID Condition
+
+For unregistered tags, use the generic trigger with a template condition:
 
 ```yaml
 automation:
@@ -100,7 +125,7 @@ automation:
     trigger:
       - platform: device
         domain: mqtt
-        device_id: <your_device_id>  # Find in HA device page
+        device_id: <your_device_id>
         type: tag_scanned
         subtype: nfc
     condition:
@@ -114,7 +139,7 @@ automation:
 
 ### Multiple Tags with Choose
 
-Handle multiple tags in a single automation:
+Handle multiple unregistered tags in a single automation:
 
 ```yaml
 automation:
