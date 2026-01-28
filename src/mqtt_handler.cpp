@@ -309,24 +309,20 @@ void MQTTHandler::removeDiscovery() {
 void MQTTHandler::removeOldTagTriggers(const char* uid) {
     if (!_mqttClient.connected() || !uid) return;
 
-    // Convert UID like "5C:9E:35:4A" to "5C9E354A" (old format used in discovery)
-    String uidClean = "";
-    for (size_t i = 0; i < strlen(uid); i++) {
-        if (uid[i] != ':') {
-            uidClean += uid[i];
-        }
-    }
+    // Convert UID like "5C:9E:35:4A" to "5C_9E_35_4A" (format used in v1.3.0)
+    String safeUid = String(uid);
+    safeUid.replace(":", "_");
 
     String pre = String(MQTT_DISCOVERY_PREFIX);
     String id = "nfcr_" + _deviceId;
 
-    // Remove old UID-based trigger (from v1.3.0)
-    String topic = pre + "/device_automation/" + id + "_" + uidClean + "/config";
+    // Remove old UID-based trigger (from v1.3.0) - format was: nfcr_<id>_tag_<safeUid>
+    String topic = pre + "/device_automation/" + id + "_tag_" + safeUid + "/config";
     _mqttClient.publish(topic.c_str(), "", true);
     _mqttClient.loop();
     yield();
 
-    Serial.printf("[MQTT] Removed old trigger: %s\n", uid);
+    Serial.printf("[MQTT] Removed old trigger: %s (topic: %s)\n", uid, topic.c_str());
 }
 
 void MQTTHandler::publishState() {
