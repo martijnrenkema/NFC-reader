@@ -3,8 +3,8 @@
 ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 
 <p align="center">
-  <img src="images/case.jpg" alt="NFC Reader Case" width="400"/>
-  <img src="images/webui.png" alt="Web Interface" width="200"/>
+  <img src="images/case.jpg" alt="NFC Reader Case" height="300"/>
+  <img src="images/webui.png" alt="Web Interface" height="300"/>
 </p>
 
 ## Features
