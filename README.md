@@ -93,6 +93,20 @@ After initial configuration:
 pio run -e esp32c3_ota -t upload
 ```
 
+### Web-based firmware update
+
+You can also update the firmware directly through the web interface - no PlatformIO or USB connection required.
+
+1. Navigate to your device's IP address in a browser
+2. Go to **Device Settings** → **Firmware Update**
+3. Upload the `.bin` file (firmware or SPIFFS)
+
+<p align="center">
+  <img src="images/firmware-update.png" alt="Firmware Update Page" height="400"/>
+</p>
+
+The firmware binary can be found at `.pio/build/esp32c3_supermini/firmware.bin` after building.
+
 ## Configuration
 
 1. Connect to WiFi network `NFC-READER-XXXX` (password: `nfc123`)
