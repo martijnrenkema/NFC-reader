@@ -140,7 +140,8 @@ void WebServer::setupRoutes() {
 
     // Night mode (LED off for bedroom use)
     _server->on("/api/night_mode", HTTP_GET, [](AsyncWebServerRequest* request) {
-        String json = "{\"night_mode\":" + String(ledController.isNightMode() ? "true" : "false") + "}";
+        char json[32];
+        snprintf(json, sizeof(json), "{\"night_mode\":%s}", ledController.isNightMode() ? "true" : "false");
         request->send(200, "application/json", json);
     });
 

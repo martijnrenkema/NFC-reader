@@ -15,6 +15,9 @@ void Storage::begin() {
     // Load settings on init
     _settings = load();
     _loaded = true;
+
+    // Load tag registry into RAM cache
+    loadTagCache();
 }
 
 NFCSettings Storage::load() {
@@ -141,8 +144,49 @@ void Storage::ensureDefaults(NFCSettings& settings) {
 }
 
 // =============================================
-// Tag Registry Implementation
+// Tag Registry Implementation (with RAM cache)
 // =============================================
+
+void Storage::loadTagCache() {
+    tagPrefs.begin(NVS_TAG_NAMESPACE, true);
+    _tagCacheCount = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
+
+    for (uint8_t i = 0; i < _tagCacheCount && i < MAX_REGISTERED_TAGS; i++) {
+        char keyUid[8], keyName[10];
+        snprintf(keyUid, sizeof(keyUid), "uid_%d", i);
+        snprintf(keyName, sizeof(keyName), "name_%d", i);
+
+        String uid = tagPrefs.getString(keyUid, "");
+        String name = tagPrefs.getString(keyName, "");
+
+        strlcpy(_tagCache[i].uid, uid.c_str(), sizeof(_tagCache[i].uid));
+        strlcpy(_tagCache[i].name, name.c_str(), sizeof(_tagCache[i].name));
+    }
+
+    tagPrefs.end();
+    Serial.printf("[STORAGE] Tag cache loaded: %d tags\n", _tagCacheCount);
+}
+
+void Storage::saveTagToNVS(uint8_t index) {
+    if (index >= _tagCacheCount) return;
+
+    tagPrefs.begin(NVS_TAG_NAMESPACE, false);
+
+    char keyUid[8], keyName[10];
+    snprintf(keyUid, sizeof(keyUid), "uid_%d", index);
+    snprintf(keyName, sizeof(keyName), "name_%d", index);
+
+    tagPrefs.putString(keyUid, _tagCache[index].uid);
+    tagPrefs.putString(keyName, _tagCache[index].name);
+
+    tagPrefs.end();
+}
+
+void Storage::saveTagCountToNVS() {
+    tagPrefs.begin(NVS_TAG_NAMESPACE, false);
+    tagPrefs.putUChar(NVS_TAG_COUNT, _tagCacheCount);
+    tagPrefs.end();
+}
 
 bool Storage::registerTag(const char* uid, const char* name) {
     if (!uid || !name || strlen(uid) == 0 || strlen(name) == 0) {
@@ -167,39 +211,32 @@ bool Storage::registerTag(const char* uid, const char* name) {
         return false;
     }
 
-    tagPrefs.begin(NVS_TAG_NAMESPACE, false);
-
-    // Check if already registered (update name)
-    uint8_t count = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
-
-    for (uint8_t i = 0; i < count; i++) {
-        String keyUid = "uid_" + String(i);
-        String storedUid = tagPrefs.getString(keyUid.c_str(), "");
-        if (storedUid == uid) {
-            // Update existing entry
-            String keyName = "name_" + String(i);
-            tagPrefs.putString(keyName.c_str(), safeName);
-            tagPrefs.end();
+    // Check if already registered (update name) - RAM lookup
+    for (uint8_t i = 0; i < _tagCacheCount; i++) {
+        if (strcmp(_tagCache[i].uid, uid) == 0) {
+            // Update existing entry in cache and NVS
+            strlcpy(_tagCache[i].name, safeName, sizeof(_tagCache[i].name));
+            saveTagToNVS(i);
             Serial.printf("[STORAGE] Tag updated: %s -> %s\n", uid, safeName);
             return true;
         }
     }
 
     // Check limit
-    if (count >= MAX_REGISTERED_TAGS) {
-        tagPrefs.end();
+    if (_tagCacheCount >= MAX_REGISTERED_TAGS) {
         Serial.println("[STORAGE] Tag registry full");
         return false;
     }
 
-    // Add new entry
-    String keyUid = "uid_" + String(count);
-    String keyName = "name_" + String(count);
-    tagPrefs.putString(keyUid.c_str(), uid);
-    tagPrefs.putString(keyName.c_str(), safeName);
-    tagPrefs.putUChar(NVS_TAG_COUNT, count + 1);
+    // Add new entry to cache
+    strlcpy(_tagCache[_tagCacheCount].uid, uid, sizeof(_tagCache[_tagCacheCount].uid));
+    strlcpy(_tagCache[_tagCacheCount].name, safeName, sizeof(_tagCache[_tagCacheCount].name));
+    _tagCacheCount++;
 
-    tagPrefs.end();
+    // Save to NVS
+    saveTagToNVS(_tagCacheCount - 1);
+    saveTagCountToNVS();
+
     Serial.printf("[STORAGE] Tag registered: %s -> %s\n", uid, safeName);
     return true;
 }
@@ -209,104 +246,85 @@ bool Storage::unregisterTag(const char* uid) {
         return false;
     }
 
-    tagPrefs.begin(NVS_TAG_NAMESPACE, false);
-
-    uint8_t count = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
-    bool found = false;
-
-    for (uint8_t i = 0; i < count; i++) {
-        String keyUid = "uid_" + String(i);
-        String storedUid = tagPrefs.getString(keyUid.c_str(), "");
-
-        if (!found && storedUid == uid) {
-            found = true;
-        }
-
-        // Shift remaining entries
-        if (found && i < count - 1) {
-            String nextKeyUid = "uid_" + String(i + 1);
-            String nextKeyName = "name_" + String(i + 1);
-            String nextUid = tagPrefs.getString(nextKeyUid.c_str(), "");
-            String nextName = tagPrefs.getString(nextKeyName.c_str(), "");
-
-            String currKeyName = "name_" + String(i);
-            tagPrefs.putString(keyUid.c_str(), nextUid);
-            tagPrefs.putString(currKeyName.c_str(), nextName);
+    // Find in cache
+    int foundIndex = -1;
+    for (uint8_t i = 0; i < _tagCacheCount; i++) {
+        if (strcmp(_tagCache[i].uid, uid) == 0) {
+            foundIndex = i;
+            break;
         }
     }
 
-    if (found) {
-        // Remove last entry and decrement count
-        String lastKeyUid = "uid_" + String(count - 1);
-        String lastKeyName = "name_" + String(count - 1);
-        tagPrefs.remove(lastKeyUid.c_str());
-        tagPrefs.remove(lastKeyName.c_str());
-        tagPrefs.putUChar(NVS_TAG_COUNT, count - 1);
-        Serial.printf("[STORAGE] Tag unregistered: %s\n", uid);
-    }
-
-    tagPrefs.end();
-    return found;
-}
-
-const char* Storage::getTagName(const char* uid) {
-    static char nameBuffer[32];
-    nameBuffer[0] = '\0';
-
-    if (!uid || strlen(uid) == 0) {
-        return nullptr;
-    }
-
-    tagPrefs.begin(NVS_TAG_NAMESPACE, true);  // Read-only
-
-    uint8_t count = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
-    for (uint8_t i = 0; i < count; i++) {
-        String keyUid = "uid_" + String(i);
-        String storedUid = tagPrefs.getString(keyUid.c_str(), "");
-        if (storedUid == uid) {
-            String keyName = "name_" + String(i);
-            String name = tagPrefs.getString(keyName.c_str(), "");
-            strlcpy(nameBuffer, name.c_str(), sizeof(nameBuffer));
-            tagPrefs.end();
-            return nameBuffer;
-        }
-    }
-
-    tagPrefs.end();
-    return nullptr;
-}
-
-uint8_t Storage::getRegisteredTagCount() {
-    tagPrefs.begin(NVS_TAG_NAMESPACE, true);
-    uint8_t count = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
-    tagPrefs.end();
-    return count;
-}
-
-bool Storage::getRegisteredTag(uint8_t index, TagEntry& entry) {
-    tagPrefs.begin(NVS_TAG_NAMESPACE, true);
-
-    uint8_t count = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
-    if (index >= count) {
-        tagPrefs.end();
+    if (foundIndex < 0) {
         return false;
     }
 
-    String keyUid = "uid_" + String(index);
-    String keyName = "name_" + String(index);
-    String uid = tagPrefs.getString(keyUid.c_str(), "");
-    String name = tagPrefs.getString(keyName.c_str(), "");
+    // Shift remaining entries in cache
+    for (uint8_t i = foundIndex; i < _tagCacheCount - 1; i++) {
+        memcpy(&_tagCache[i], &_tagCache[i + 1], sizeof(TagEntry));
+    }
+    _tagCacheCount--;
 
-    strlcpy(entry.uid, uid.c_str(), sizeof(entry.uid));
-    strlcpy(entry.name, name.c_str(), sizeof(entry.name));
+    // Clear last entry
+    memset(&_tagCache[_tagCacheCount], 0, sizeof(TagEntry));
 
+    // Rebuild NVS (simpler than shifting in NVS)
+    tagPrefs.begin(NVS_TAG_NAMESPACE, false);
+    tagPrefs.clear();
+    tagPrefs.putUChar(NVS_TAG_COUNT, _tagCacheCount);
+
+    for (uint8_t i = 0; i < _tagCacheCount; i++) {
+        char keyUid[8], keyName[10];
+        snprintf(keyUid, sizeof(keyUid), "uid_%d", i);
+        snprintf(keyName, sizeof(keyName), "name_%d", i);
+        tagPrefs.putString(keyUid, _tagCache[i].uid);
+        tagPrefs.putString(keyName, _tagCache[i].name);
+    }
     tagPrefs.end();
+
+    Serial.printf("[STORAGE] Tag unregistered: %s\n", uid);
+    return true;
+}
+
+bool Storage::getTagName(const char* uid, char* buffer, size_t bufferSize) {
+    if (!uid || strlen(uid) == 0 || !buffer || bufferSize == 0) {
+        return false;
+    }
+
+    // Fast RAM lookup - no NVS access!
+    for (uint8_t i = 0; i < _tagCacheCount; i++) {
+        if (strcmp(_tagCache[i].uid, uid) == 0) {
+            strlcpy(buffer, _tagCache[i].name, bufferSize);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+uint8_t Storage::getRegisteredTagCount() {
+    return _tagCacheCount;  // From cache, no NVS access
+}
+
+bool Storage::getRegisteredTag(uint8_t index, TagEntry& entry) {
+    if (index >= _tagCacheCount) {
+        return false;
+    }
+
+    // From cache, no NVS access
+    memcpy(&entry, &_tagCache[index], sizeof(TagEntry));
     return true;
 }
 
 void Storage::clearTagRegistry() {
+    // Clear cache
+    _tagCacheCount = 0;
+    memset(_tagCache, 0, sizeof(_tagCache));
+
+    // Clear NVS
     tagPrefs.begin(NVS_TAG_NAMESPACE, false);
     tagPrefs.clear();
     tagPrefs.end();
+
     Serial.println("[STORAGE] Tag registry cleared");
 }

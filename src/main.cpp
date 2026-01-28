@@ -28,46 +28,63 @@ void setupTimeSync() {
     timeConfigured = true;
 }
 
-// Central LED status update
+// LED state tracking to avoid unnecessary updates
+enum class LedState { UNKNOWN, OTA, AP_MODE, CONNECTING, DISCONNECTED, NFC_ERROR, TAG_PRESENT, IDLE };
+LedState lastLedState = LedState::UNKNOWN;
+
+// Central LED status update - only updates when state changes
 void updateLedStatus() {
-    // 1. OTA has highest priority
+    LedState newState;
+
+    // Determine current state (priority order)
     if (otaInProgress) {
-        ledController.blink(50);  // Very fast blink during OTA
-        return;
+        newState = LedState::OTA;
+    } else if (wifiManager.isAPMode()) {
+        newState = LedState::AP_MODE;
+    } else if (wifiManager.getState() == WifiStatus::CONNECTING) {
+        newState = LedState::CONNECTING;
+    } else if (!wifiManager.isConnected() && !wifiManager.isAPMode()) {
+        newState = LedState::DISCONNECTED;
+    } else if (!nfcHandler.isConnected()) {
+        newState = LedState::NFC_ERROR;
+    } else if (nfcHandler.isTagPresent()) {
+        newState = LedState::TAG_PRESENT;
+    } else {
+        newState = LedState::IDLE;
     }
 
-    // 2. AP mode
-    if (wifiManager.isAPMode()) {
-        ledController.showAPMode();
+    // Only update LED if state changed
+    if (newState == lastLedState) {
         return;
     }
+    lastLedState = newState;
 
-    // 3. WiFi connecting
-    if (wifiManager.getState() == WifiStatus::CONNECTING) {
-        ledController.showConnecting();
-        return;
+    // Apply LED state
+    switch (newState) {
+        case LedState::OTA:
+            ledController.blink(50);  // Very fast blink during OTA
+            break;
+        case LedState::AP_MODE:
+            ledController.showAPMode();
+            break;
+        case LedState::CONNECTING:
+            ledController.showConnecting();
+            break;
+        case LedState::DISCONNECTED:
+            ledController.showError();
+            break;
+        case LedState::NFC_ERROR:
+            ledController.blink(1000);  // Slow blink = NFC error
+            break;
+        case LedState::TAG_PRESENT:
+            ledController.on();
+            break;
+        case LedState::IDLE:
+            ledController.pulse();
+            break;
+        default:
+            break;
     }
-
-    // 4. WiFi disconnected
-    if (!wifiManager.isConnected() && !wifiManager.isAPMode()) {
-        ledController.showError();
-        return;
-    }
-
-    // 5. NFC reader not connected
-    if (!nfcHandler.isConnected()) {
-        ledController.blink(1000);  // Slow blink = NFC error
-        return;
-    }
-
-    // 6. Tag present - solid on
-    if (nfcHandler.isTagPresent()) {
-        ledController.on();
-        return;
-    }
-
-    // 7. Idle - pulsing
-    ledController.pulse();
 }
 
 // WiFi state change handler
@@ -183,9 +200,10 @@ void loop() {
     nfcHandler.loop();
     ledController.loop();
 
-    // Update LED status periodically (every 2 seconds - less frequent)
+    // Update LED status periodically (check for state changes)
+    // Now efficient because it only updates LED when state actually changes
     static unsigned long lastLedUpdate = 0;
-    if (millis() - lastLedUpdate >= 2000) {
+    if (millis() - lastLedUpdate >= 500) {
         lastLedUpdate = millis();
         updateLedStatus();
     }

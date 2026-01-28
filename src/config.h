@@ -86,7 +86,7 @@
 // ===========================================
 // Firmware Version
 // ===========================================
-#define FIRMWARE_VERSION        "1.5.0"
+#define FIRMWARE_VERSION        "1.6.0"
 
 // ===========================================
 // GitHub Repo (for updates)

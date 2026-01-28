@@ -13,12 +13,12 @@ MQTTHandler* _mqttInstance = nullptr;
 void MQTTHandler::begin() {
     _mqttInstance = this;
 
-    // Set socket timeout
-    _wifiClient.setTimeout(3000);
+    // Set shorter socket timeouts for non-blocking behavior
+    _wifiClient.setTimeout(1000);  // 1 second TCP timeout
 
     _mqttClient.setClient(_wifiClient);
     _mqttClient.setKeepAlive(NFC_MQTT_KEEPALIVE);
-    _mqttClient.setSocketTimeout(3);
+    _mqttClient.setSocketTimeout(1);  // 1 second MQTT socket timeout
     _mqttClient.setBufferSize(1024);
 
     // Generate unique device ID from MAC
@@ -31,41 +31,100 @@ void MQTTHandler::begin() {
     Serial.println("[MQTT] Handler initialized");
 }
 
-void MQTTHandler::loop() {
-    if (!_mqttClient.connected()) {
-        unsigned long now = millis();
-        if (now - _lastReconnect >= MQTT_RECONNECT_INTERVAL) {
-            _lastReconnect = now;
-            if (_host.length() > 0 && wifiManager.isConnected()) {
-                Serial.println("[MQTT] Attempting connection...");
-                String clientId = "nfc-reader-" + _deviceId;
+void MQTTHandler::processConnectStateMachine() {
+    unsigned long now = millis();
 
-                _mqttClient.setCallback(mqttCallback);
+    switch (_connectState) {
+        case MqttConnectState::IDLE:
+            // Check if we should attempt connection
+            if (!_mqttClient.connected() && _host.length() > 0 && wifiManager.isConnected()) {
+                if (now - _lastReconnect >= MQTT_RECONNECT_INTERVAL) {
+                    _lastReconnect = now;
+                    _connectStartTime = now;
 
-                if (_mqttClient.connect(clientId.c_str(), _user.c_str(), _password.c_str(),
-                                        (getBaseTopic() + "/availability").c_str(), 0, true, "offline")) {
-                    Serial.println("[MQTT] Connected");
-                    logger.infof("MQTT connected to %s:%d", _host.c_str(), _port);
-
-                    publishAvailability(true);
-                    subscribeToCommands();
-
-                    // Start discovery state machine
-                    if (!_discoveryPublished) {
-                        _publishState = MqttPublishState::DISC_LAST_UID;
-                        _lastPublishStep = millis();
-                        Serial.println("[MQTT] Starting discovery publish...");
+                    // Start TCP connection (non-blocking on ESP32)
+                    Serial.printf("[MQTT] Connecting to %s:%d...\n", _host.c_str(), _port);
+                    if (_wifiClient.connect(_host.c_str(), _port)) {
+                        // TCP connected immediately
+                        _connectState = MqttConnectState::MQTT_CONNECTING;
+                        Serial.println("[MQTT] TCP connected, starting MQTT handshake...");
                     } else {
-                        _publishState = MqttPublishState::STATE_LAST_UID;
-                        _lastPublishStep = millis();
+                        // TCP connection in progress or failed
+                        _connectState = MqttConnectState::TCP_CONNECTING;
                     }
-                } else {
-                    Serial.printf("[MQTT] Connection failed, rc=%d\n", _mqttClient.state());
-                    logger.errorf("MQTT connection failed (rc=%d)", _mqttClient.state());
                 }
             }
+            break;
+
+        case MqttConnectState::TCP_CONNECTING:
+            // Check TCP connection status
+            if (_wifiClient.connected()) {
+                _connectState = MqttConnectState::MQTT_CONNECTING;
+                _connectStartTime = now;
+                Serial.println("[MQTT] TCP connected, starting MQTT handshake...");
+            } else if (now - _connectStartTime >= TCP_CONNECT_TIMEOUT) {
+                // TCP timeout
+                Serial.println("[MQTT] TCP connection timeout");
+                _wifiClient.stop();
+                _connectState = MqttConnectState::IDLE;
+            }
+            // Yield to allow background processing
+            yield();
+            break;
+
+        case MqttConnectState::MQTT_CONNECTING: {
+            // Attempt MQTT connect (this is still somewhat blocking but with short timeout)
+            _mqttClient.setCallback(mqttCallback);
+            String clientId = "nfc-reader-" + _deviceId;
+
+            if (_mqttClient.connect(clientId.c_str(), _user.c_str(), _password.c_str(),
+                                    (getBaseTopic() + "/availability").c_str(), 0, true, "offline")) {
+                Serial.println("[MQTT] Connected");
+                logger.infof("MQTT connected to %s:%d", _host.c_str(), _port);
+
+                publishAvailability(true);
+                subscribeToCommands();
+
+                // Start discovery state machine
+                if (!_discoveryPublished) {
+                    _publishState = MqttPublishState::DISC_LAST_UID;
+                    _lastPublishStep = millis();
+                    Serial.println("[MQTT] Starting discovery publish...");
+                } else {
+                    _publishState = MqttPublishState::STATE_LAST_UID;
+                    _lastPublishStep = millis();
+                }
+                _connectState = MqttConnectState::CONNECTED;
+            } else {
+                Serial.printf("[MQTT] Connection failed, rc=%d\n", _mqttClient.state());
+                logger.errorf("MQTT connection failed (rc=%d)", _mqttClient.state());
+                _wifiClient.stop();
+                _connectState = MqttConnectState::IDLE;
+            }
+            break;
         }
-    } else {
+
+        case MqttConnectState::CONNECTED:
+            // Check if still connected
+            if (!_mqttClient.connected()) {
+                Serial.println("[MQTT] Disconnected");
+                logger.warn("MQTT disconnected");
+                _connectState = MqttConnectState::IDLE;
+            }
+            break;
+
+        case MqttConnectState::FAILED:
+            // Reset to idle after failure
+            _connectState = MqttConnectState::IDLE;
+            break;
+    }
+}
+
+void MQTTHandler::loop() {
+    // Process non-blocking connection state machine
+    processConnectStateMachine();
+
+    if (_mqttClient.connected()) {
         _mqttClient.loop();
 
         // Process non-blocking publish state machine
@@ -150,10 +209,13 @@ void MQTTHandler::processPublishStateMachine() {
             _publishState = MqttPublishState::STATE_WIFI;
             break;
 
-        case MqttPublishState::STATE_WIFI:
-            _mqttClient.publish((base + "/wifi_signal").c_str(), String(wifiManager.getRSSI()).c_str(), true);
+        case MqttPublishState::STATE_WIFI: {
+            char rssiStr[8];
+            snprintf(rssiStr, sizeof(rssiStr), "%d", wifiManager.getRSSI());
+            _mqttClient.publish((base + "/wifi_signal").c_str(), rssiStr, true);
             _publishState = MqttPublishState::STATE_NIGHT_MODE;
             break;
+        }
 
         case MqttPublishState::STATE_NIGHT_MODE:
             _mqttClient.publish((base + "/night_mode").c_str(), ledController.isNightMode() ? "ON" : "OFF", true);
@@ -216,11 +278,9 @@ void MQTTHandler::publishTagScanned(const char* uid) {
     yield();
 
     // Check if this is a registered tag - fire named trigger
-    // NVS read is quick, but yield after to give WiFi time
-    const char* tagName = storage.getTagName(uid);
-    yield();
-
-    if (tagName != nullptr && strlen(tagName) > 0) {
+    // Fast RAM lookup (no NVS access)
+    char tagName[32];
+    if (storage.getTagName(uid, tagName, sizeof(tagName))) {
         // Publish to named tag topic for HA device trigger
         String namedTopic = base + "/tag/" + String(tagName);
         _mqttClient.publish(namedTopic.c_str(), uid, false);

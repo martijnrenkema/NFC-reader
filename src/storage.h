@@ -69,7 +69,7 @@ public:
     // Tag registry
     bool registerTag(const char* uid, const char* name);
     bool unregisterTag(const char* uid);
-    const char* getTagName(const char* uid);
+    bool getTagName(const char* uid, char* buffer, size_t bufferSize);
     uint8_t getRegisteredTagCount();
     bool getRegisteredTag(uint8_t index, TagEntry& entry);
     void clearTagRegistry();
@@ -77,6 +77,13 @@ public:
 private:
     NFCSettings _settings;
     bool _loaded = false;
+
+    // RAM cache for tag registry (fast lookup, no NVS on every scan)
+    TagEntry _tagCache[MAX_REGISTERED_TAGS];
+    uint8_t _tagCacheCount = 0;
+    void loadTagCache();
+    void saveTagToNVS(uint8_t index);
+    void saveTagCountToNVS();
 
     void ensureDefaults(NFCSettings& settings);
     void commit();

@@ -239,34 +239,44 @@ const char* Logger::levelToString(LogLevel level) {
 }
 
 String Logger::toJson() {
-    String json = "[";
+    // Pre-allocate memory to reduce fragmentation
+    // Estimate: ~150 bytes per entry (timestamp, level, message)
+    String json;
+    json.reserve(_count * 150 + 10);
+
+    json = "[";
 
     for (uint16_t i = 0; i < _count; i++) {
         const LogEntry* entry = getEntry(i);
         if (!entry) continue;
 
-        if (i > 0) json += ",";
+        if (i > 0) json += ',';
 
+        // Build entry using snprintf for numbers
+        char numBuf[32];
         json += "{\"u\":";
-        json += String(entry->uptimeMs);
+        snprintf(numBuf, sizeof(numBuf), "%lu", entry->uptimeMs);
+        json += numBuf;
         json += ",\"e\":";
-        json += String((unsigned long)entry->epochTime);
+        snprintf(numBuf, sizeof(numBuf), "%lu", (unsigned long)entry->epochTime);
+        json += numBuf;
         json += ",\"l\":\"";
         json += levelToString(entry->level);
         json += "\",\"m\":\"";
 
         // Escape quotes and backslashes in message
         for (const char* p = entry->message; *p; p++) {
-            if (*p == '"') json += "\\\"";
-            else if (*p == '\\') json += "\\\\";
-            else if (*p == '\n') json += "\\n";
-            else if (*p == '\r') json += "\\r";
-            else json += *p;
+            char c = *p;
+            if (c == '"') json += "\\\"";
+            else if (c == '\\') json += "\\\\";
+            else if (c == '\n') json += "\\n";
+            else if (c == '\r') json += "\\r";
+            else json += c;
         }
 
         json += "\"}";
     }
 
-    json += "]";
+    json += ']';
     return json;
 }

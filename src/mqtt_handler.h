@@ -6,6 +6,15 @@
 #include <PubSubClient.h>
 #include "config.h"
 
+// Non-blocking connection states
+enum class MqttConnectState {
+    IDLE,
+    TCP_CONNECTING,
+    MQTT_CONNECTING,
+    CONNECTED,
+    FAILED
+};
+
 // Non-blocking publish states
 enum class MqttPublishState {
     IDLE,
@@ -69,7 +78,14 @@ private:
     bool _discoveryPublished = false;
     volatile bool _statePublishPending = false;
 
-    // Non-blocking state machine
+    // Non-blocking connection state machine
+    MqttConnectState _connectState = MqttConnectState::IDLE;
+    unsigned long _connectStartTime = 0;
+    static const unsigned long TCP_CONNECT_TIMEOUT = 1000;  // 1 second TCP timeout
+    static const unsigned long MQTT_CONNECT_TIMEOUT = 2000; // 2 second MQTT timeout
+    void processConnectStateMachine();
+
+    // Non-blocking publish state machine
     MqttPublishState _publishState = MqttPublishState::IDLE;
     static const unsigned long PUBLISH_STEP_DELAY = 50;
 

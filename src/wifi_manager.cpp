@@ -8,6 +8,7 @@ WiFiManager wifiManager;
 void WiFiManager::begin() {
     generateAPName();
     WiFi.mode(WIFI_STA);
+    WiFi.setHostname(OTA_HOSTNAME);  // Set hostname to "nfc-reader" instead of default "ESP32-xxxx"
     WiFi.setAutoReconnect(true);
 
     // Check if WiFi is already connected (can happen after OTA update/restart)

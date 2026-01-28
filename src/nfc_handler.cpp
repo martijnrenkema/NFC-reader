@@ -95,8 +95,8 @@ void NFCHandler::loop() {
     }
 
     // Try to read a tag
-    uint8_t uid[7];
-    uint8_t uidLength;
+    uint8_t uid[10];  // Max UID size (7 for Mifare, 10 for some ISO14443A)
+    uint8_t uidLength = 0;
 
     // readPassiveTargetID with short timeout (30ms)
     bool success = nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 30);
@@ -105,6 +105,13 @@ void NFCHandler::loop() {
     yield();
 
     if (success) {
+        // Bounds check to prevent buffer overflow
+        if (uidLength > sizeof(uid)) {
+            Serial.printf("[NFC] ERROR: UID too long (%d bytes), skipping\n", uidLength);
+            logger.errorf("UID too long: %d bytes", uidLength);
+            return;
+        }
+
         // Format UID as string
         char uidStr[32];
         formatUID(uid, uidLength, uidStr);
@@ -186,14 +193,17 @@ void NFCHandler::onTagScanned(ScanCallback callback) {
 
 void NFCHandler::formatUID(uint8_t* uid, uint8_t uidLength, char* output) {
     // Format as XX:XX:XX:XX... (colon separated hex)
-    output[0] = '\0';
-    char temp[4];
+    // Optimized: O(n) instead of O(n²) by tracking position
+    char* ptr = output;
 
     for (uint8_t i = 0; i < uidLength; i++) {
-        if (i > 0) strcat(output, ":");
-        snprintf(temp, sizeof(temp), "%02X", uid[i]);
-        strcat(output, temp);
+        if (i > 0) {
+            *ptr++ = ':';
+        }
+        // Write hex directly to buffer
+        ptr += snprintf(ptr, 3, "%02X", uid[i]);
     }
+    *ptr = '\0';
 }
 
 void NFCHandler::addToHistory(const char* uid) {
