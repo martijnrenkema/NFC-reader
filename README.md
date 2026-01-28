@@ -90,12 +90,9 @@ pio run -e esp32c3_ota -t upload
 
 ### Trigger on Specific NFC Tag
 
-Each scanned tag automatically registers as a device trigger in Home Assistant. Simply scan your tags once, then create automations by selecting the specific tag from the dropdown:
-
-1. Scan your NFC tag on the reader
-2. In Home Assistant, create a new automation
-3. Select trigger: **Device → NFC Reader → tag_scanned [YOUR_UID]**
-4. Add your action - no conditions needed!
+1. **Scan your tag** on the reader to see its UID
+2. **Copy the UID** from the web interface or the `sensor.nfc_reader_last_scanned_uid` entity
+3. **Create automation** with the tag_scanned trigger and a condition for your UID
 
 ```yaml
 automation:
@@ -103,47 +100,43 @@ automation:
     trigger:
       - platform: device
         domain: mqtt
-        device_id: <your_device_id>
+        device_id: <your_device_id>  # Find in HA device page
         type: tag_scanned
-        subtype: "5C:9E:35:4A"  # Your tag's UID
+        subtype: nfc
+    condition:
+      - condition: template
+        value_template: "{{ trigger.payload == 'C3:7B:70:19' }}"
     action:
       - service: light.toggle
         target:
           entity_id: light.kids_room
 ```
 
-### Multiple Tags
+### Multiple Tags with Choose
 
-Each tag gets its own trigger, so you can create separate automations for each tag, or combine them:
+Handle multiple tags in a single automation:
 
 ```yaml
 automation:
-  - alias: "Bedroom Light - Tag 1"
+  - alias: "NFC Tag Actions"
     trigger:
       - platform: device
         domain: mqtt
         device_id: <your_device_id>
         type: tag_scanned
-        subtype: "5C:9E:35:4A"
+        subtype: nfc
     action:
-      - service: light.turn_on
-        target:
-          entity_id: light.bedroom
-
-  - alias: "Play Music - Tag 2"
-    trigger:
-      - platform: device
-        domain: mqtt
-        device_id: <your_device_id>
-        type: tag_scanned
-        subtype: "AA:BB:CC:DD"
-    action:
-      - service: media_player.play_media
-        target:
-          entity_id: media_player.speaker
-        data:
-          media_content_id: "good_night_music"
-          media_content_type: "music"
+      - choose:
+          - conditions: "{{ trigger.payload == 'C3:7B:70:19' }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.bedroom
+          - conditions: "{{ trigger.payload == '5C:9E:35:4A' }}"
+            sequence:
+              - service: light.turn_off
+                target:
+                  entity_id: light.bedroom
 ```
 
 ### Night Mode (disable LED during sleep)

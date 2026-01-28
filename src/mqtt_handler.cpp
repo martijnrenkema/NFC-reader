@@ -199,11 +199,8 @@ void MQTTHandler::publishTagScanned(const char* uid) {
 
     String base = getBaseTopic();
 
-    // Publish device trigger discovery for this specific tag
-    // This makes the tag appear as a selectable trigger in HA
-    publishTagTriggerDiscovery(uid);
-
-    // Publish to tag/scanned topic with UID as payload (for device trigger matching)
+    // Publish to tag/scanned topic with UID as payload
+    // HA device trigger will fire, user checks UID in automation condition
     _mqttClient.publish((base + "/tag/scanned").c_str(), uid, false);
 
     // Also update retained last_uid (for sensor display)
@@ -329,34 +326,26 @@ void MQTTHandler::publishNightModeSwitchDiscovery() {
 }
 
 void MQTTHandler::publishTagScannedTriggerDiscovery() {
-    // Generic "any tag" trigger is no longer published
-    // Individual tag triggers are published when tags are scanned
-    // This keeps the HA UI clean with only tags you've actually used
-}
-
-void MQTTHandler::publishTagTriggerDiscovery(const char* uid) {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
-    String uidStr = String(uid);
 
-    // Create a safe ID from UID (replace : with _)
-    String safeUid = uidStr;
-    safeUid.replace(":", "_");
-
-    // Home Assistant device trigger for this specific tag
-    // Each scanned tag gets its own trigger in the HA automation UI
+    // Single device trigger for tag scanned events
+    // Fires on ANY tag - user specifies UID in automation condition:
+    //   condition: "{{ trigger.payload == 'C3:7B:70:19' }}"
     String p = "{\"automation_type\":\"trigger\",";
     p += "\"type\":\"tag_scanned\",";
-    p += "\"subtype\":\"" + uidStr + "\",";
+    p += "\"subtype\":\"nfc\",";
     p += "\"topic\":\"" + b + "/tag/scanned\",";
-    p += "\"payload\":\"" + uidStr + "\",";
     p += "\"dev\":{\"ids\":[\"" + devId + "\"],";
     p += "\"name\":\"NFC Reader\",\"mf\":\"DIY\",\"mdl\":\"ESP32-C3 + PN532\",\"sw\":\"" FIRMWARE_VERSION "\"}}";
 
-    String topic = String(MQTT_DISCOVERY_PREFIX) + "/device_automation/nfcr_" + _deviceId + "_tag_" + safeUid + "/config";
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/device_automation/nfcr_" + _deviceId + "_scan/config";
     _mqttClient.publish(topic.c_str(), p.c_str(), true);
+}
 
-    Serial.printf("[MQTT] Published trigger for tag: %s\n", uid);
+void MQTTHandler::publishTagTriggerDiscovery(const char* uid) {
+    // No longer used - keeping function to avoid header changes
+    (void)uid;
 }
 
 void MQTTHandler::subscribeToCommands() {
