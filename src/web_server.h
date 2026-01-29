@@ -40,6 +40,9 @@ private:
     void handleSavePasswords(AsyncWebServerRequest* request);
     void handleGetPasswords(AsyncWebServerRequest* request);
     void handleScanHistory(AsyncWebServerRequest* request);
+    void handleUpdateCheck(AsyncWebServerRequest* request);
+    void handleUpdateStatus(AsyncWebServerRequest* request);
+    void handleUpdateInstall(AsyncWebServerRequest* request);
 };
 
 extern WebServer webServer;

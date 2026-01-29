@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "logger.h"
 #include "led_controller.h"
+#include "update_checker.h"
 #include <ArduinoJson.h>
 
 MQTTHandler mqttHandler;
@@ -13,12 +14,12 @@ MQTTHandler* _mqttInstance = nullptr;
 void MQTTHandler::begin() {
     _mqttInstance = this;
 
-    // Set shorter socket timeouts for non-blocking behavior
-    _wifiClient.setTimeout(1000);  // 1 second TCP timeout
+    // Set socket timeouts for better responsiveness
+    _wifiClient.setTimeout(2000);  // 2 second TCP timeout
 
     _mqttClient.setClient(_wifiClient);
     _mqttClient.setKeepAlive(NFC_MQTT_KEEPALIVE);
-    _mqttClient.setSocketTimeout(1);  // 1 second MQTT socket timeout
+    _mqttClient.setSocketTimeout(5);  // 5 second MQTT socket timeout (handshake needs time)
     _mqttClient.setBufferSize(1024);
 
     // Generate unique device ID from MAC
@@ -131,10 +132,9 @@ void MQTTHandler::loop() {
         processPublishStateMachine();
 
         // Handle state publish requests
+        // Note: volatile bool is sufficient - do NOT use noInterrupts() on ESP32-C3
         if (_statePublishPending && _publishState == MqttPublishState::IDLE) {
-            noInterrupts();
             _statePublishPending = false;
-            interrupts();
             _publishState = MqttPublishState::STATE_LAST_UID;
             _lastPublishStep = millis();
         }
@@ -189,6 +189,21 @@ void MQTTHandler::processPublishStateMachine() {
             publishTagScannedTriggerDiscovery();
             // Named tag triggers will be published when tags are scanned
             // This avoids blocking NVS reads during discovery
+            _publishState = MqttPublishState::DISC_UPDATE_AVAILABLE;
+            break;
+
+        case MqttPublishState::DISC_UPDATE_AVAILABLE:
+            publishUpdateAvailableBinarySensorDiscovery();
+            _publishState = MqttPublishState::DISC_LATEST_VERSION;
+            break;
+
+        case MqttPublishState::DISC_LATEST_VERSION:
+            publishLatestVersionSensorDiscovery();
+            _publishState = MqttPublishState::DISC_CURRENT_VERSION;
+            break;
+
+        case MqttPublishState::DISC_CURRENT_VERSION:
+            publishCurrentVersionSensorDiscovery();
             _publishState = MqttPublishState::DISC_DONE;
             break;
 
@@ -219,8 +234,18 @@ void MQTTHandler::processPublishStateMachine() {
 
         case MqttPublishState::STATE_NIGHT_MODE:
             _mqttClient.publish((base + "/night_mode").c_str(), ledController.isNightMode() ? "ON" : "OFF", true);
+            _publishState = MqttPublishState::STATE_UPDATE;
+            break;
+
+        case MqttPublishState::STATE_UPDATE: {
+            // Publish update-related states
+            const UpdateInfo& info = updateChecker.getInfo();
+            _mqttClient.publish((base + "/update_available").c_str(), info.available ? "ON" : "OFF", true);
+            _mqttClient.publish((base + "/latest_version").c_str(), info.latestVersion[0] ? info.latestVersion : "unknown", true);
+            _mqttClient.publish((base + "/current_version").c_str(), info.currentVersion, true);
             _publishState = MqttPublishState::STATE_DONE;
             break;
+        }
 
         case MqttPublishState::STATE_DONE:
             _publishState = MqttPublishState::IDLE;
@@ -496,4 +521,53 @@ void MQTTHandler::mqttCallback(char* topic, uint8_t* payload, unsigned int lengt
             _mqttInstance->_mqttClient.publish(stateTopic.c_str(), nightMode ? "ON" : "OFF", true);
         }
     }
+}
+
+void MQTTHandler::publishUpdateAvailableBinarySensorDiscovery() {
+    String b = getBaseTopic();
+    String devId = "nfc_reader_" + _deviceId;
+
+    String p = "{\"name\":\"Update Available\",";
+    p += "\"uniq_id\":\"nfcr_" + _deviceId + "_update\",";
+    p += "\"stat_t\":\"" + b + "/update_available\",";
+    p += "\"avty_t\":\"" + b + "/availability\",";
+    p += "\"dev_cla\":\"update\",";
+    p += "\"ent_cat\":\"diagnostic\",";
+    p += "\"ic\":\"mdi:package-up\",";
+    p += "\"dev\":{\"ids\":[\"" + devId + "\"]}}";
+
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/binary_sensor/nfcr_" + _deviceId + "_update/config";
+    _mqttClient.publish(topic.c_str(), p.c_str(), true);
+}
+
+void MQTTHandler::publishLatestVersionSensorDiscovery() {
+    String b = getBaseTopic();
+    String devId = "nfc_reader_" + _deviceId;
+
+    String p = "{\"name\":\"Latest Version\",";
+    p += "\"uniq_id\":\"nfcr_" + _deviceId + "_latest_ver\",";
+    p += "\"stat_t\":\"" + b + "/latest_version\",";
+    p += "\"avty_t\":\"" + b + "/availability\",";
+    p += "\"ent_cat\":\"diagnostic\",";
+    p += "\"ic\":\"mdi:new-box\",";
+    p += "\"dev\":{\"ids\":[\"" + devId + "\"]}}";
+
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/sensor/nfcr_" + _deviceId + "_latest_ver/config";
+    _mqttClient.publish(topic.c_str(), p.c_str(), true);
+}
+
+void MQTTHandler::publishCurrentVersionSensorDiscovery() {
+    String b = getBaseTopic();
+    String devId = "nfc_reader_" + _deviceId;
+
+    String p = "{\"name\":\"Current Version\",";
+    p += "\"uniq_id\":\"nfcr_" + _deviceId + "_current_ver\",";
+    p += "\"stat_t\":\"" + b + "/current_version\",";
+    p += "\"avty_t\":\"" + b + "/availability\",";
+    p += "\"ent_cat\":\"diagnostic\",";
+    p += "\"ic\":\"mdi:tag\",";
+    p += "\"dev\":{\"ids\":[\"" + devId + "\"]}}";
+
+    String topic = String(MQTT_DISCOVERY_PREFIX) + "/sensor/nfcr_" + _deviceId + "_current_ver/config";
+    _mqttClient.publish(topic.c_str(), p.c_str(), true);
 }

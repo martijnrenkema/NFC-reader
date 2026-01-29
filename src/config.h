@@ -86,11 +86,17 @@
 // ===========================================
 // Firmware Version
 // ===========================================
-#define FIRMWARE_VERSION        "1.6.0"
+#define FIRMWARE_VERSION        "1.7.0"
 
 // ===========================================
 // GitHub Repo (for updates)
 // ===========================================
 #define UPDATE_GITHUB_REPO      "martijnrenkema/NFC-reader"
+
+// ===========================================
+// Auto Update Settings
+// ===========================================
+#define UPDATE_CHECK_INTERVAL   86400000UL  // 24 hours in milliseconds
+#define UPDATE_CHECK_TIMEOUT    15000       // 15 seconds
 
 #endif // CONFIG_H

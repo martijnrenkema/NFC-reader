@@ -84,6 +84,7 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
+            margin-bottom: 8px;
         }
         .btn-primary {
             background: linear-gradient(135deg, #6366f1, #8b5cf6);
@@ -96,6 +97,21 @@
         .btn-primary:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(255,255,255,0.2);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #fff;
+        }
+        .btn-success:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
         }
         .progress-container {
             display: none;
@@ -136,6 +152,10 @@
             background: rgba(239, 68, 68, 0.2);
             color: #ef4444;
         }
+        .status.info {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
         .warning {
             background: rgba(245, 158, 11, 0.2);
             color: #f59e0b;
@@ -150,6 +170,31 @@
             font-size: 0.8em;
             margin-top: 20px;
         }
+        .version-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .version-row:last-child { border-bottom: none; }
+        .version-label { color: #888; }
+        .version-value { font-weight: 500; }
+        .version-value.update-available { color: #22c55e; }
+        .update-badge {
+            display: inline-block;
+            background: #22c55e;
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            margin-left: 8px;
+        }
+        .last-check {
+            text-align: center;
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 12px;
+        }
     </style>
 </head>
 <body>
@@ -157,9 +202,39 @@
         <h1>Firmware Update</h1>
         <a href="/" class="back-link">&larr; Back to dashboard</a>
 
-        <!-- Firmware Update -->
+        <!-- Auto Update Section -->
         <div class="card">
-            <h2>Upload Firmware</h2>
+            <h2>Automatic Update</h2>
+            <p>Check for and install updates directly from GitHub releases.</p>
+
+            <div class="version-row">
+                <span class="version-label">Current Version</span>
+                <span class="version-value" id="current-version">Loading...</span>
+            </div>
+            <div class="version-row">
+                <span class="version-label">Latest Version</span>
+                <span class="version-value" id="latest-version">-</span>
+            </div>
+
+            <div style="margin-top: 16px;">
+                <button class="btn btn-secondary" id="check-btn">Check for Updates</button>
+                <button class="btn btn-success" id="install-btn" disabled style="display:none;">Install Update</button>
+            </div>
+
+            <div class="progress-container" id="auto-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="auto-progress-fill"></div>
+                </div>
+                <div class="progress-text" id="auto-progress-text">Checking...</div>
+            </div>
+
+            <div class="status" id="auto-status"></div>
+            <div class="last-check" id="last-check"></div>
+        </div>
+
+        <!-- Manual Firmware Update -->
+        <div class="card">
+            <h2>Manual Upload: Firmware</h2>
             <p>Upload a new .bin file to update the firmware.</p>
             <div class="warning">
                 Warning: Do not interrupt the update process! The device will restart automatically after a successful update.
@@ -180,9 +255,9 @@
             <div class="status" id="fw-status"></div>
         </div>
 
-        <!-- Filesystem Update -->
+        <!-- Manual Filesystem Update -->
         <div class="card">
-            <h2>Upload Web Interface</h2>
+            <h2>Manual Upload: Web Interface</h2>
             <p>Upload a SPIFFS .bin file to update the web interface.</p>
             <div class="upload-area" id="fs-upload-area">
                 <input type="file" id="fs-file" accept=".bin">
@@ -206,7 +281,182 @@
     </div>
 
     <script>
-        // Check platform on load
+        // Elements
+        const currentVersionEl = document.getElementById('current-version');
+        const latestVersionEl = document.getElementById('latest-version');
+        const checkBtn = document.getElementById('check-btn');
+        const installBtn = document.getElementById('install-btn');
+        const autoProgress = document.getElementById('auto-progress');
+        const autoProgressFill = document.getElementById('auto-progress-fill');
+        const autoProgressText = document.getElementById('auto-progress-text');
+        const autoStatus = document.getElementById('auto-status');
+        const lastCheckEl = document.getElementById('last-check');
+
+        let updatePollingInterval = null;
+
+        // Format time ago
+        function formatTimeAgo(seconds) {
+            if (seconds < 0) return 'Never';
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + ' minutes ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + ' hours ago';
+            return Math.floor(seconds / 86400) + ' days ago';
+        }
+
+        // Fetch update status
+        function fetchUpdateStatus() {
+            return fetch('/api/update/status')
+                .then(r => r.json())
+                .then(data => {
+                    currentVersionEl.textContent = 'v' + data.current_version;
+
+                    if (data.latest_version && data.latest_version !== 'unknown') {
+                        latestVersionEl.textContent = 'v' + data.latest_version;
+                        if (data.available) {
+                            latestVersionEl.classList.add('update-available');
+                            latestVersionEl.innerHTML = 'v' + data.latest_version + '<span class="update-badge">NEW</span>';
+                            installBtn.style.display = 'block';
+                            installBtn.disabled = data.state !== 'idle';
+                        } else {
+                            latestVersionEl.classList.remove('update-available');
+                            installBtn.style.display = 'none';
+                        }
+                    } else {
+                        latestVersionEl.textContent = '-';
+                        latestVersionEl.classList.remove('update-available');
+                        installBtn.style.display = 'none';
+                    }
+
+                    // Update last check time
+                    if (data.last_check_ago >= 0) {
+                        lastCheckEl.textContent = 'Last checked: ' + formatTimeAgo(data.last_check_ago);
+                    } else {
+                        lastCheckEl.textContent = 'Never checked';
+                    }
+
+                    // Handle states
+                    if (data.state === 'checking') {
+                        autoProgress.classList.add('show');
+                        autoProgressText.textContent = 'Checking for updates...';
+                        autoProgressFill.style.width = '50%';
+                        checkBtn.disabled = true;
+                    } else if (data.state === 'downloading') {
+                        autoProgress.classList.add('show');
+                        autoProgressText.textContent = 'Downloading: ' + data.download_progress + '%';
+                        autoProgressFill.style.width = data.download_progress + '%';
+                        checkBtn.disabled = true;
+                        installBtn.disabled = true;
+                    } else if (data.state === 'error') {
+                        autoProgress.classList.remove('show');
+                        autoStatus.className = 'status show error';
+                        autoStatus.textContent = data.error || 'Unknown error';
+                        checkBtn.disabled = false;
+                    } else {
+                        autoProgress.classList.remove('show');
+                        checkBtn.disabled = false;
+                        if (data.available && data.has_firmware_url) {
+                            installBtn.disabled = false;
+                        }
+                    }
+
+                    return data;
+                });
+        }
+
+        // Check for updates
+        checkBtn.addEventListener('click', () => {
+            autoStatus.classList.remove('show');
+            autoProgress.classList.add('show');
+            autoProgressText.textContent = 'Checking for updates...';
+            autoProgressFill.style.width = '0%';
+            checkBtn.disabled = true;
+
+            fetch('/api/update/check', { method: 'POST' })
+                .then(r => r.json())
+                .then(() => {
+                    // Start polling for status
+                    startPolling();
+                })
+                .catch(err => {
+                    autoStatus.className = 'status show error';
+                    autoStatus.textContent = 'Failed to start update check';
+                    autoProgress.classList.remove('show');
+                    checkBtn.disabled = false;
+                });
+        });
+
+        // Install update
+        installBtn.addEventListener('click', () => {
+            if (!confirm('Install the update now? The device will restart after installation.')) return;
+
+            autoStatus.classList.remove('show');
+            autoProgress.classList.add('show');
+            autoProgressText.textContent = 'Starting update...';
+            autoProgressFill.style.width = '0%';
+            installBtn.disabled = true;
+            checkBtn.disabled = true;
+
+            fetch('/api/update/install', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        // Start polling for download progress
+                        startPolling();
+                    } else {
+                        autoStatus.className = 'status show error';
+                        autoStatus.textContent = data.error || 'Failed to start update';
+                        autoProgress.classList.remove('show');
+                        installBtn.disabled = false;
+                        checkBtn.disabled = false;
+                    }
+                })
+                .catch(err => {
+                    autoStatus.className = 'status show error';
+                    autoStatus.textContent = 'Failed to start update';
+                    autoProgress.classList.remove('show');
+                    installBtn.disabled = false;
+                    checkBtn.disabled = false;
+                });
+        });
+
+        // Polling for status updates
+        function startPolling() {
+            if (updatePollingInterval) clearInterval(updatePollingInterval);
+            updatePollingInterval = setInterval(() => {
+                fetchUpdateStatus().then(data => {
+                    if (data.state === 'idle') {
+                        stopPolling();
+                        if (data.available) {
+                            autoStatus.className = 'status show success';
+                            autoStatus.textContent = 'Update available: v' + data.latest_version;
+                        } else if (data.latest_version && data.latest_version !== 'unknown') {
+                            autoStatus.className = 'status show info';
+                            autoStatus.textContent = 'Firmware is up to date';
+                        }
+                    } else if (data.download_progress >= 100) {
+                        autoStatus.className = 'status show success';
+                        autoStatus.textContent = 'Update complete! Restarting...';
+                        stopPolling();
+                        setTimeout(() => { window.location.href = '/'; }, 5000);
+                    }
+                }).catch(() => {
+                    // Device might be restarting
+                    autoStatus.className = 'status show info';
+                    autoStatus.textContent = 'Device restarting...';
+                    stopPolling();
+                    setTimeout(() => { window.location.href = '/'; }, 10000);
+                });
+            }, 1000);
+        }
+
+        function stopPolling() {
+            if (updatePollingInterval) {
+                clearInterval(updatePollingInterval);
+                updatePollingInterval = null;
+            }
+        }
+
+        // Initial load
         fetch('/api/status')
             .then(r => r.json())
             .then(d => {
@@ -218,7 +468,10 @@
                 document.getElementById('version-info').textContent = 'Version info not available';
             });
 
-        // File upload handling
+        // Fetch initial update status
+        fetchUpdateStatus();
+
+        // File upload handling for manual updates
         function setupUpload(areaId, fileId, btnId, progressId, fillId, textId, statusId, endpoint) {
             const area = document.getElementById(areaId);
             const fileInput = document.getElementById(fileId);

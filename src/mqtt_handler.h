@@ -24,12 +24,16 @@ enum class MqttPublishState {
     DISC_WIFI_SIGNAL,
     DISC_NIGHT_MODE,
     DISC_TAG_SCANNED_TRIGGER,
+    DISC_UPDATE_AVAILABLE,
+    DISC_LATEST_VERSION,
+    DISC_CURRENT_VERSION,
     DISC_DONE,
     // State publish states
     STATE_LAST_UID,
     STATE_TAG_PRESENT,
     STATE_WIFI,
     STATE_NIGHT_MODE,
+    STATE_UPDATE,
     STATE_DONE
 };
 
@@ -56,10 +60,10 @@ public:
     void publishTagScanned(const char* uid);
 
     // Request state publish (safe to call from any context)
+    // Note: volatile bool is sufficient for single-core ESP32-C3
+    // Do NOT use noInterrupts() - it breaks RMT/WiFi queues
     void requestStatePublish() {
-        noInterrupts();
         _statePublishPending = true;
-        interrupts();
     }
 
 private:
@@ -81,8 +85,8 @@ private:
     // Non-blocking connection state machine
     MqttConnectState _connectState = MqttConnectState::IDLE;
     unsigned long _connectStartTime = 0;
-    static const unsigned long TCP_CONNECT_TIMEOUT = 1000;  // 1 second TCP timeout
-    static const unsigned long MQTT_CONNECT_TIMEOUT = 2000; // 2 second MQTT timeout
+    static const unsigned long TCP_CONNECT_TIMEOUT = 2000;  // 2 second TCP timeout
+    static const unsigned long MQTT_CONNECT_TIMEOUT = 5000; // 5 second MQTT timeout
     void processConnectStateMachine();
 
     // Non-blocking publish state machine
@@ -97,6 +101,9 @@ private:
     void publishNightModeSwitchDiscovery();
     void publishTagScannedTriggerDiscovery();
     void publishNamedTagTriggerDiscovery(const char* name);  // Named tag trigger
+    void publishUpdateAvailableBinarySensorDiscovery();
+    void publishLatestVersionSensorDiscovery();
+    void publishCurrentVersionSensorDiscovery();
 
     void subscribeToCommands();
     static void mqttCallback(char* topic, uint8_t* payload, unsigned int length);

@@ -11,7 +11,8 @@ ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
 
 - **AP Mode on first boot**: `NFC-READER-XXXX` (last 4 hex of MAC)
 - **Web interface** for WiFi/MQTT configuration
-- **OTA updates** via web interface
+- **OTA updates** via web interface or automatic from GitHub
+- **Automatic update checker** - checks GitHub releases every 24 hours
 - **MQTT** with Home Assistant auto-discovery
 - **Tag Registry** - name your tags for easy Home Assistant automations
 - **Device triggers** for tag-specific automations (named or generic)
@@ -107,6 +108,27 @@ You can also update the firmware directly through the web interface - no Platfor
 
 The firmware binary can be found at `.pio/build/esp32c3_supermini/firmware.bin` after building.
 
+### Automatic Updates from GitHub
+
+The NFC Reader can automatically check for and install updates from GitHub releases:
+
+1. Navigate to your device's IP address in a browser
+2. Go to **Device Settings** → **Firmware Update**
+3. The **Automatic Update** section shows current and latest versions
+4. Click **Check for Updates** to manually check
+5. Click **Install Update** when an update is available
+
+The device automatically checks for updates:
+- 2 minutes after boot
+- Every 24 hours thereafter
+
+Updates are downloaded directly from GitHub releases. Both firmware and web interface (SPIFFS) are updated automatically.
+
+**Home Assistant Integration**: Three new sensors are available via MQTT:
+- `Update Available` - Binary sensor showing if an update is available
+- `Latest Version` - Shows the latest available version
+- `Current Version` - Shows the currently installed version
+
 ## Configuration
 
 1. Connect to WiFi network `NFC-READER-XXXX` (password: `nfc123`)
@@ -124,6 +146,9 @@ The firmware binary can be found at `.pio/build/esp32c3_supermini/firmware.bin` 
 | `nfc_reader_xxxx/availability` | online/offline |
 | `nfc_reader_xxxx/night_mode` | Night mode status ON/OFF |
 | `nfc_reader_xxxx/night_mode/set` | Night mode command (send ON/OFF) |
+| `nfc_reader_xxxx/update_available` | ON/OFF - update available |
+| `nfc_reader_xxxx/latest_version` | Latest available version |
+| `nfc_reader_xxxx/current_version` | Currently installed version |
 
 ## Home Assistant Automation
 

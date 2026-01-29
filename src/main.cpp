@@ -10,6 +10,7 @@
 #include "led_controller.h"
 #include "ota_handler.h"
 #include "logger.h"
+#include "update_checker.h"
 
 // Global settings
 NFCSettings settings;
@@ -185,6 +186,15 @@ void setup() {
     otaHandler.onStart(onOTAStart);
     otaHandler.onEnd(onOTAEnd);
 
+    // Initialize update checker
+    updateChecker.begin();
+    updateChecker.onStateChange([]() {
+        // Trigger MQTT state publish when update state changes
+        if (mqttHandler.isConnected()) {
+            mqttHandler.requestStatePublish();
+        }
+    });
+
     // Update LED status
     updateLedStatus();
 
@@ -213,6 +223,9 @@ void loop() {
     yield();
 
     mqttHandler.loop();
+    yield();
+
+    updateChecker.loop();
     yield();
 
     // Check for urgent log saves

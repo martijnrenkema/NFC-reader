@@ -6,6 +6,7 @@
 #include "nfc_handler.h"
 #include "led_controller.h"
 #include "logger.h"
+#include "update_checker.h"
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
 #include <Update.h>
@@ -121,6 +122,19 @@ void WebServer::setupRoutes() {
     // NFC scan history
     _server->on("/api/scans", HTTP_GET, [this](AsyncWebServerRequest* request) {
         handleScanHistory(request);
+    });
+
+    // Auto-update endpoints
+    _server->on("/api/update/check", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleUpdateCheck(request);
+    });
+
+    _server->on("/api/update/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        handleUpdateStatus(request);
+    });
+
+    _server->on("/api/update/install", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        handleUpdateInstall(request);
     });
 
     _server->on("/api/scans", HTTP_DELETE, [](AsyncWebServerRequest* request) {
@@ -566,4 +580,57 @@ void WebServer::handleScanHistory(AsyncWebServerRequest* request) {
         return;
     }
     request->send(200, "application/json", response);
+}
+
+void WebServer::handleUpdateCheck(AsyncWebServerRequest* request) {
+    // Trigger manual update check
+    updateChecker.checkForUpdates();
+    request->send(200, "application/json", "{\"success\":true,\"message\":\"Update check started\"}");
+}
+
+void WebServer::handleUpdateStatus(AsyncWebServerRequest* request) {
+    const UpdateInfo& info = updateChecker.getInfo();
+    UpdateCheckState state = updateChecker.getState();
+
+    StaticJsonDocument<512> doc;
+    doc["state"] = state == UpdateCheckState::IDLE ? "idle" :
+                   state == UpdateCheckState::CHECKING ? "checking" :
+                   state == UpdateCheckState::DOWNLOADING ? "downloading" : "error";
+    doc["available"] = info.available;
+    doc["current_version"] = info.currentVersion;
+    doc["latest_version"] = info.latestVersion;
+    doc["release_url"] = info.releaseUrl;
+    doc["download_progress"] = info.downloadProgress;
+    doc["error"] = info.errorMessage;
+
+    // Time since last check (in seconds)
+    if (info.lastCheckTime > 0) {
+        doc["last_check_ago"] = (millis() - info.lastCheckTime) / 1000;
+    } else {
+        doc["last_check_ago"] = -1;  // Never checked
+    }
+
+    // Has download URLs
+    doc["has_firmware_url"] = strlen(info.downloadUrl) > 0;
+    doc["has_spiffs_url"] = strlen(info.spiffsUrl) > 0;
+
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
+}
+
+void WebServer::handleUpdateInstall(AsyncWebServerRequest* request) {
+    if (!updateChecker.isUpdateAvailable()) {
+        request->send(400, "application/json", "{\"error\":\"No update available\"}");
+        return;
+    }
+
+    if (updateChecker.getState() != UpdateCheckState::IDLE) {
+        request->send(400, "application/json", "{\"error\":\"Update already in progress\"}");
+        return;
+    }
+
+    // Start OTA update
+    updateChecker.startOTAUpdate();
+    request->send(200, "application/json", "{\"success\":true,\"message\":\"Update started\"}");
 }
