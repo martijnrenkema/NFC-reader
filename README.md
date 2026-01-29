@@ -154,6 +154,33 @@ To install an update:
 pio run -e esp32c3_ota -t upload
 ```
 
+## Tag Registry
+
+Register up to **50 NFC tags** with friendly names for easy Home Assistant automations.
+
+### How It Works
+
+1. **Scan a tag** on the reader
+2. Open the **web interface** → **Tag Registry**
+3. Click **"Use Last UID"** to auto-fill the UID
+4. Enter a friendly name (e.g., `Bedroom_Light`, `Goodnight`, `Music_Toggle`)
+5. Click **"Register Tag"**
+
+### Naming Rules
+
+- Names must be **1-31 characters**
+- Use **letters, numbers, and underscores** only
+- Names become Home Assistant **device trigger subtypes**
+- Example: Tag named `Bedroom_Light` creates trigger `tag_scanned` / `Bedroom_Light`
+
+### Benefits
+
+| Feature | Without Registry | With Registry |
+|---------|------------------|---------------|
+| Home Assistant trigger | Generic `nfc` trigger | Named trigger (e.g., `Bedroom_Light`) |
+| Automation setup | Need UID condition template | Direct trigger selection |
+| Readability | UID like `C3:7B:70:19` | Friendly name |
+
 ## Home Assistant Integration
 
 ### MQTT Auto-Discovery
@@ -181,9 +208,9 @@ The device automatically appears in Home Assistant when MQTT is configured. No m
 
 ### Automation Examples
 
-#### Named Tags (Recommended)
+#### Method 1: Named Tags (Recommended)
 
-Register tags with names in the web interface for easy automations:
+Register tags in the web interface for the easiest automations. The tag name becomes a selectable trigger in Home Assistant:
 
 ```yaml
 automation:
@@ -193,14 +220,18 @@ automation:
         domain: mqtt
         device_id: <your_device_id>
         type: tag_scanned
-        subtype: Bedroom_Light  # Your tag name
+        subtype: Bedroom_Light  # Your registered tag name
     action:
       - service: light.toggle
         target:
           entity_id: light.bedroom
 ```
 
-#### Generic Trigger with UID Condition
+> **Tip:** In the Home Assistant UI, you can select the trigger directly from a dropdown - no need to type the UID!
+
+#### Method 2: Generic Trigger with UID
+
+For unregistered tags, use the generic `nfc` trigger with a template condition:
 
 ```yaml
 automation:
@@ -210,7 +241,7 @@ automation:
         domain: mqtt
         device_id: <your_device_id>
         type: tag_scanned
-        subtype: nfc
+        subtype: nfc  # Generic trigger for any tag
     condition:
       - condition: template
         value_template: "{{ trigger.payload == 'C3:7B:70:19' }}"
@@ -218,6 +249,33 @@ automation:
       - service: light.toggle
         target:
           entity_id: light.kids_room
+```
+
+#### Multiple Tags in One Automation
+
+Handle multiple unregistered tags with `choose`:
+
+```yaml
+automation:
+  - alias: "NFC Multi-Tag Actions"
+    trigger:
+      - platform: device
+        domain: mqtt
+        device_id: <your_device_id>
+        type: tag_scanned
+        subtype: nfc
+    action:
+      - choose:
+          - conditions: "{{ trigger.payload == 'C3:7B:70:19' }}"
+            sequence:
+              - service: light.turn_on
+                target:
+                  entity_id: light.bedroom
+          - conditions: "{{ trigger.payload == '5C:9E:35:4A' }}"
+            sequence:
+              - service: scene.turn_on
+                target:
+                  entity_id: scene.movie_time
 ```
 
 #### Night Mode Automation
