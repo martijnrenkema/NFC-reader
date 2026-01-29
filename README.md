@@ -1,54 +1,77 @@
 # NFC Reader for Home Assistant
 
-ESP32-C3 SuperMini + PN532 NFC reader with MQTT integration for Home Assistant.
+ESP32-C3 SuperMini + PN532 NFC/RFID reader with MQTT integration for Home Assistant. Scan NFC tags to trigger automations.
 
 <p align="center">
   <img src="images/case.jpg" alt="NFC Reader Case" height="300"/>
   <img src="images/webui.png" alt="Web Interface" height="300"/>
 </p>
 
+![Version](https://img.shields.io/badge/Version-1.7.0-brightgreen)
+![ESP32-C3](https://img.shields.io/badge/ESP32--C3-Tested-blue)
+![PlatformIO](https://img.shields.io/badge/PlatformIO-Build-orange)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-MQTT-41BDF5)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 ## Features
 
-- **AP Mode on first boot**: `NFC-READER-XXXX` (last 4 hex of MAC)
-- **Web interface** for WiFi/MQTT configuration
-- **OTA updates** via web interface or automatic from GitHub
-- **Automatic update checker** - checks GitHub releases every 24 hours
-- **MQTT** with Home Assistant auto-discovery
-- **Tag Registry** - name your tags for easy Home Assistant automations
-- **Device triggers** for tag-specific automations (named or generic)
-- **RGB Status LED** with color-coded feedback
-- **Night mode** - disable LED via MQTT/web (ideal for bedroom)
-- **Scan history** (last 10 scans)
+- **Home Assistant Integration** - MQTT auto-discovery, device triggers for automations
+- **Tag Registry** - Name your tags for easy automations (e.g., "Bedroom_Light")
+- **Auto-Update** - Checks GitHub for new releases, one-click install
+- **Web Interface** - Configure WiFi, MQTT, register tags, update firmware
+- **Night Mode** - Disable LED via MQTT/web (ideal for bedroom)
+- **RGB LED Status** - Color-coded feedback for connection state
+- **OTA Updates** - Wireless firmware updates via web interface or PlatformIO
+- **Scan History** - View last 10 scanned tags
+
+## Quick Start
+
+### Option 1: Pre-built Binaries (Easiest)
+
+1. Download the latest release from [Releases](https://github.com/martijnrenkema/NFC-reader/releases)
+2. Flash using esptool (see Installation section)
+
+### Option 2: Build from Source
+
+```bash
+# Clone repository
+git clone https://github.com/martijnrenkema/NFC-reader.git
+cd NFC-reader
+
+# Build firmware
+pio run -e esp32c3_supermini
+
+# Build filesystem
+pio run -e esp32c3_supermini -t buildfs
+```
 
 ## Hardware
 
 ### Requirements
 
 - ESP32-C3 SuperMini
-- PN532 NFC/RFID breakout board
-- LED (optional) + 330Ω resistor
+- PN532 NFC/RFID breakout board (I2C mode)
 - Dupont wires
 
 ### 3D Printed Case
 
-A compact case is available on MakerWorld that fits the PN532 + ESP32-C3 SuperMini combo perfectly:
+A compact case is available on MakerWorld:
 
 **[NFC Tag Reader Case on MakerWorld](https://makerworld.com/nl/models/1117728-nfc-tag-reader-esp8266-32-c6-c3-supermini-pn532)**
 
-### Pinout
+### Wiring
 
-| ESP32-C3 | PN532 | Description |
-|----------|-------|-------------|
+| ESP32-C3 | PN532 | Function |
+|----------|-------|----------|
 | 3.3V | VCC | Power |
 | GND | GND | Ground |
 | GPIO4 | SDA | I2C Data |
 | GPIO5 | SCL | I2C Clock |
 | GPIO3 | RSTO | Reset (optional) |
 
-| ESP32-C3 | Component | Description |
-|----------|-----------|-------------|
-| GPIO8 | Built-in | RGB LED (WS2812B) |
-| GPIO10 | External | LED Anode (via 330Ω, optional) |
+| ESP32-C3 | Function |
+|----------|----------|
+| GPIO8 | Built-in RGB LED (WS2812B) |
 
 ### PN532 DIP Switch (I2C mode)
 
@@ -57,111 +80,110 @@ SEL0: OFF
 SEL1: ON
 ```
 
-## LED Status Colors
-
-The built-in RGB LED on the ESP32-C3 SuperMini provides visual feedback:
-
-| Color | Pattern | Meaning |
-|-------|---------|---------|
-| 🔵 Light Blue | Fast blink | Connecting to WiFi |
-| 🟠 Orange | Slow pulse | AP mode (configuration portal) |
-| 🟢 Green | Soft pulse | Connected and idle |
-| 🔵 Cyan | Double flash | Tag scanned successfully |
-| 🔴 Red | Fast blink | Error |
-| ⚫ Off | - | Night mode enabled |
-
 ## Installation
 
-### First time (USB)
+### Step 1: Flash Firmware
+
+#### Method A: Using PlatformIO (Recommended)
 
 ```bash
-# Build firmware
-pio run -e esp32c3_supermini
-
 # Flash firmware
 pio run -e esp32c3_supermini -t upload
 
-# Build and flash filesystem
-pio run -e esp32c3_supermini -t buildfs
+# Flash filesystem (web interface)
 pio run -e esp32c3_supermini -t uploadfs
 ```
 
-### OTA updates
+#### Method B: Using esptool (Pre-built binaries)
 
-After initial configuration:
+> **You must flash TWO files: firmware + filesystem**
+>
+> | File | Address |
+> |------|---------|
+> | `firmware.bin` | `0x10000` |
+> | `spiffs.bin` | `0x3D0000` |
 
 ```bash
-pio run -e esp32c3_ota -t upload
+# Flash both files
+esptool.py --port /dev/cu.usbmodem* --chip esp32c3 --baud 921600 \
+  write_flash 0x10000 firmware.bin 0x3D0000 spiffs.bin
 ```
 
-### Web-based firmware update
+### Step 2: Initial Setup
 
-You can also update the firmware directly through the web interface - no PlatformIO or USB connection required.
+1. Power on the device - LED will pulse orange (AP mode)
+2. Connect to WiFi network: `NFC-READER-XXXX` (password: `nfc123`)
+3. Open browser: `http://192.168.4.1`
+4. Configure your WiFi credentials
+5. Device restarts and connects to your network
 
-1. Navigate to your device's IP address in a browser
-2. Go to **Device Settings** → **Firmware Update**
-3. Upload the `.bin` file (firmware or SPIFFS)
+### Step 3: Configure MQTT
+
+1. Find device IP in your router or use the serial monitor
+2. Open web interface
+3. Enter MQTT broker settings
+4. Device appears automatically in Home Assistant
+
+## Updating Firmware
+
+### Method 1: Automatic Update (v1.7.0+)
+
+The device checks GitHub for updates automatically:
+- 2 minutes after boot
+- Every 24 hours
+
+To install an update:
+1. Open web interface → **Firmware Update**
+2. Click **Check for Updates**
+3. Click **Install Update** when available
+4. Device downloads and installs automatically
 
 <p align="center">
   <img src="images/firmware-update.png" alt="Firmware Update Page" height="400"/>
 </p>
 
-The firmware binary can be found at `.pio/build/esp32c3_supermini/firmware.bin` after building.
+### Method 2: Manual Web Upload
 
-### Automatic Updates from GitHub
+1. Download firmware from [Releases](https://github.com/martijnrenkema/NFC-reader/releases)
+2. Open web interface → **Firmware Update**
+3. Upload `firmware.bin` and `spiffs.bin`
 
-The NFC Reader can automatically check for and install updates from GitHub releases:
+### Method 3: PlatformIO OTA
 
-1. Navigate to your device's IP address in a browser
-2. Go to **Device Settings** → **Firmware Update**
-3. The **Automatic Update** section shows current and latest versions
-4. Click **Check for Updates** to manually check
-5. Click **Install Update** when an update is available
+```bash
+pio run -e esp32c3_ota -t upload
+```
 
-The device automatically checks for updates:
-- 2 minutes after boot
-- Every 24 hours thereafter
+## Home Assistant Integration
 
-Updates are downloaded directly from GitHub releases. Both firmware and web interface (SPIFFS) are updated automatically.
+### MQTT Auto-Discovery
 
-**Home Assistant Integration**: Three new sensors are available via MQTT:
-- `Update Available` - Binary sensor showing if an update is available
-- `Latest Version` - Shows the latest available version
-- `Current Version` - Shows the currently installed version
+The device automatically appears in Home Assistant when MQTT is configured. No manual setup needed!
 
-## Configuration
+### Entities Created
 
-1. Connect to WiFi network `NFC-READER-XXXX` (password: `nfc123`)
-2. Open http://192.168.4.1
-3. Configure WiFi credentials
-4. Configure MQTT broker
+| Entity | Type | Description |
+|--------|------|-------------|
+| Last Scanned UID | Sensor | Last scanned tag UID |
+| Tag Present | Binary Sensor | Tag currently on reader |
+| WiFi Signal | Sensor | Signal strength (dBm) |
+| Night Mode | Switch | Disable LED |
+| Update Available | Binary Sensor | New firmware available |
+| Latest Version | Sensor | Latest available version |
+| Current Version | Sensor | Installed firmware version |
 
-## MQTT Topics
+### Device Triggers
 
-| Topic | Description |
-|-------|-------------|
-| `nfc_reader_xxxx/tag/scanned` | Published on each scan (JSON with UID) |
-| `nfc_reader_xxxx/last_uid` | Last scanned UID (retained) |
-| `nfc_reader_xxxx/tag_present` | ON/OFF |
-| `nfc_reader_xxxx/availability` | online/offline |
-| `nfc_reader_xxxx/night_mode` | Night mode status ON/OFF |
-| `nfc_reader_xxxx/night_mode/set` | Night mode command (send ON/OFF) |
-| `nfc_reader_xxxx/update_available` | ON/OFF - update available |
-| `nfc_reader_xxxx/latest_version` | Latest available version |
-| `nfc_reader_xxxx/current_version` | Currently installed version |
+| Trigger | Description |
+|---------|-------------|
+| `tag_scanned` / `nfc` | Fires on any tag scan (UID in payload) |
+| `tag_scanned` / `<name>` | Fires when named tag is scanned |
 
-## Home Assistant Automation
+### Automation Examples
 
-### Option 1: Named Tags (Recommended)
+#### Named Tags (Recommended)
 
-Register your tags with names in the web interface for easy automations:
-
-1. **Scan your tag** on the reader
-2. **Open the web interface** and go to "Tag Registry"
-3. **Click "Use Last UID"** and enter a name (e.g., `Bedroom_Light`)
-4. **Click "Register Tag"**
-
-Now you can use the named trigger directly in Home Assistant:
+Register tags with names in the web interface for easy automations:
 
 ```yaml
 automation:
@@ -169,7 +191,7 @@ automation:
     trigger:
       - platform: device
         domain: mqtt
-        device_id: <your_device_id>  # Find in HA device page
+        device_id: <your_device_id>
         type: tag_scanned
         subtype: Bedroom_Light  # Your tag name
     action:
@@ -178,13 +200,11 @@ automation:
           entity_id: light.bedroom
 ```
 
-### Option 2: Generic Trigger with UID Condition
-
-For unregistered tags, use the generic trigger with a template condition:
+#### Generic Trigger with UID Condition
 
 ```yaml
 automation:
-  - alias: "Kids Room Light - NFC Tag"
+  - alias: "NFC Tag Action"
     trigger:
       - platform: device
         domain: mqtt
@@ -200,64 +220,150 @@ automation:
           entity_id: light.kids_room
 ```
 
-### Multiple Tags with Choose
-
-Handle multiple unregistered tags in a single automation:
+#### Night Mode Automation
 
 ```yaml
 automation:
-  - alias: "NFC Tag Actions"
-    trigger:
-      - platform: device
-        domain: mqtt
-        device_id: <your_device_id>
-        type: tag_scanned
-        subtype: nfc
-    action:
-      - choose:
-          - conditions: "{{ trigger.payload == 'C3:7B:70:19' }}"
-            sequence:
-              - service: light.turn_on
-                target:
-                  entity_id: light.bedroom
-          - conditions: "{{ trigger.payload == '5C:9E:35:4A' }}"
-            sequence:
-              - service: light.turn_off
-                target:
-                  entity_id: light.bedroom
-```
-
-### Night Mode (disable LED during sleep)
-
-```yaml
-automation:
-  - alias: "NFC Reader Night Mode On"
+  - alias: "NFC Reader Night Mode"
     trigger:
       - platform: time
-        at: "20:00:00"
+        at: "22:00:00"
     action:
       - service: switch.turn_on
         target:
           entity_id: switch.nfc_reader_night_mode
-
-  - alias: "NFC Reader Night Mode Off"
-    trigger:
-      - platform: time
-        at: "07:00:00"
-    action:
-      - service: switch.turn_off
-        target:
-          entity_id: switch.nfc_reader_night_mode
 ```
 
-## Default Credentials
+## MQTT Topics
 
-| Setting | Value |
-|---------|-------|
-| AP Password | `nfc123` |
-| OTA Password | `nfc-ota` |
-| AP IP | `192.168.4.1` |
+| Topic | Description |
+|-------|-------------|
+| `nfc_reader_xxxx/tag/scanned` | Tag scan event (UID as payload) |
+| `nfc_reader_xxxx/last_uid` | Last scanned UID (retained) |
+| `nfc_reader_xxxx/tag_present` | ON/OFF |
+| `nfc_reader_xxxx/availability` | online/offline |
+| `nfc_reader_xxxx/night_mode` | Night mode status |
+| `nfc_reader_xxxx/night_mode/set` | Night mode command |
+| `nfc_reader_xxxx/update_available` | Update available (ON/OFF) |
+| `nfc_reader_xxxx/latest_version` | Latest version available |
+| `nfc_reader_xxxx/current_version` | Currently installed version |
+
+## LED Status Indicators
+
+| Color | Pattern | Status |
+|-------|---------|--------|
+| Light Blue | Fast blink | Connecting to WiFi |
+| Orange | Slow pulse | AP mode (configuration) |
+| Green | Soft pulse | Connected and idle |
+| Cyan | Double flash | Tag scanned |
+| Red | Fast blink | Error |
+| Off | - | Night mode enabled |
+
+## Configuration
+
+### Default Passwords
+
+| Function | Default | Changeable |
+|----------|---------|------------|
+| WiFi AP | `nfc123` | Yes |
+| OTA Updates | `nfc-ota` | Yes |
+
+Change passwords in web interface under **Security**. Minimum 8 characters.
+
+## Troubleshooting
+
+### Device won't connect to WiFi
+1. Long press reset button or power cycle
+2. Connect to `NFC-READER-XXXX` AP
+3. Reconfigure WiFi settings at `192.168.4.1`
+
+### NFC reader not detected
+1. Check wiring (I2C: GPIO4=SDA, GPIO5=SCL)
+2. Verify PN532 DIP switches (SEL0=OFF, SEL1=ON)
+3. Check serial monitor for error messages
+
+### Auto-update shows "No releases found"
+- Repository must be public for auto-update to work
+- Check your internet connection
+
+### Web interface not loading
+- Flash the filesystem: `pio run -t uploadfs`
+- Or download `spiffs.bin` from releases and flash to `0x3D0000`
+
+## Building from Source
+
+### Prerequisites
+- [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
+- USB-C cable
+
+### Build Commands
+
+```bash
+# Build firmware
+pio run -e esp32c3_supermini
+
+# Build filesystem
+pio run -e esp32c3_supermini -t buildfs
+
+# Upload firmware
+pio run -e esp32c3_supermini -t upload
+
+# Upload filesystem
+pio run -e esp32c3_supermini -t uploadfs
+```
+
+## Project Structure
+
+```
+├── src/
+│   ├── main.cpp              # Main entry point
+│   ├── config.h              # Pin definitions & settings
+│   ├── nfc_handler.*         # PN532 NFC reading
+│   ├── led_controller.*      # RGB LED control
+│   ├── storage.*             # Settings persistence (NVS)
+│   ├── wifi_manager.*        # WiFi connection & AP mode
+│   ├── web_server.*          # Web interface + OTA
+│   ├── mqtt_handler.*        # MQTT + HA discovery
+│   ├── update_checker.*      # GitHub auto-update
+│   └── ota_handler.*         # ArduinoOTA
+├── data/                     # Web files (SPIFFS)
+│   ├── index.html
+│   ├── update.html
+│   ├── style.css
+│   └── script.js
+├── platformio.ini
+└── README.md
+```
+
+## Dependencies
+
+- [PubSubClient](https://github.com/knolleary/pubsubclient) - MQTT client
+- [ArduinoJson](https://github.com/bblanchon/ArduinoJson) - JSON parsing
+- [ESPAsyncWebServer](https://github.com/me-no-dev/ESPAsyncWebServer) - Async web server
+- [PN532](https://github.com/Seeed-Studio/PN532) - NFC reader library
 
 ## License
 
-MIT
+MIT License - feel free to use and modify.
+
+## Changelog
+
+### v1.7.0
+**Automatic Update Checker:**
+- **Auto-update from GitHub**: Device checks for updates automatically (2 min after boot, then every 24 hours)
+- **One-click install**: Download and install firmware + SPIFFS directly from GitHub releases
+- **MQTT sensors**: New `update_available`, `latest_version`, `current_version` sensors
+- **Web UI**: New "Automatic Update" section on firmware update page
+
+### v1.6.0
+**Stability & Performance:**
+- Major stability improvements for 24/7 operation
+- Non-blocking LED animations
+- Improved MQTT reconnection handling
+
+### v1.5.0
+**Tag Registry:**
+- Name your tags for easy Home Assistant automations
+- Web interface for tag management
+
+For older versions, see [GitHub Releases](https://github.com/martijnrenkema/NFC-reader/releases).
