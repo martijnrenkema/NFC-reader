@@ -7,7 +7,7 @@ ESP32-C3 SuperMini + PN532 NFC/RFID reader with MQTT integration for Home Assist
   <img src="images/webui.png" alt="Web Interface" height="300"/>
 </p>
 
-![Version](https://img.shields.io/badge/Version-1.7.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen)
 ![ESP32-C3](https://img.shields.io/badge/ESP32--C3-Tested-blue)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-Build-orange)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-MQTT-41BDF5)
@@ -101,12 +101,12 @@ pio run -e esp32c3_supermini -t uploadfs
 > | File | Address |
 > |------|---------|
 > | `firmware.bin` | `0x10000` |
-> | `spiffs.bin` | `0x3D0000` |
+> | `littlefs.bin` | `0x3D0000` |
 
 ```bash
 # Flash both files
 esptool.py --port /dev/cu.usbmodem* --chip esp32c3 --baud 921600 \
-  write_flash 0x10000 firmware.bin 0x3D0000 spiffs.bin
+  write_flash 0x10000 firmware.bin 0x3D0000 littlefs.bin
 ```
 
 ### Step 2: Initial Setup
@@ -146,7 +146,7 @@ To install an update:
 
 1. Download firmware from [Releases](https://github.com/martijnrenkema/NFC-reader/releases)
 2. Open web interface → **Firmware Update**
-3. Upload `firmware.bin` and `spiffs.bin`
+3. Upload `firmware.bin` and `littlefs.bin`
 
 ### Method 3: PlatformIO OTA
 
@@ -346,7 +346,7 @@ Change passwords in web interface under **Security**. Minimum 8 characters.
 
 ### Web interface not loading
 - Flash the filesystem: `pio run -t uploadfs`
-- Or download `spiffs.bin` from releases and flash to `0x3D0000`
+- Or download `littlefs.bin` from releases and flash to `0x3D0000`
 
 ## Building from Source
 
@@ -384,7 +384,7 @@ pio run -e esp32c3_supermini -t uploadfs
 │   ├── mqtt_handler.*        # MQTT + HA discovery
 │   ├── update_checker.*      # GitHub auto-update
 │   └── ota_handler.*         # ArduinoOTA
-├── data/                     # Web files (SPIFFS)
+├── data/                     # Web files (LittleFS)
 │   ├── index.html
 │   ├── update.html
 │   ├── style.css
@@ -406,10 +406,16 @@ MIT License - feel free to use and modify.
 
 ## Changelog
 
+### v1.8.0
+**Bug Fixes, WiFi Improvements & LittleFS:**
+- **LittleFS migration**: Switched from deprecated SPIFFS to LittleFS for better reliability and wear leveling
+- **WiFi boost**: Maximum TX power (19.5dBm) and disabled power saving for better range
+- **Bug fixes**: LED night mode recovery, UID bounds check, NFC null pointer guard, factory reset now clears tag registry, MQTT heap fragmentation reduction, OTA stability improvements
+
 ### v1.7.0
 **Automatic Update Checker:**
 - **Auto-update from GitHub**: Device checks for updates automatically (2 min after boot, then every 24 hours)
-- **One-click install**: Download and install firmware + SPIFFS directly from GitHub releases
+- **One-click install**: Download and install firmware + filesystem directly from GitHub releases
 - **MQTT sensors**: New `update_available`, `latest_version`, `current_version` sensors
 - **Web UI**: New "Automatic Update" section on firmware update page
 

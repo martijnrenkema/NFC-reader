@@ -8,10 +8,10 @@
 #include "logger.h"
 #include "update_checker.h"
 #include <ArduinoJson.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <Update.h>
 
-#define FILESYSTEM SPIFFS
+#define FILESYSTEM LittleFS
 #define UPDATE_ERROR_STRING() Update.errorString()
 
 // External flag from main.cpp
@@ -394,7 +394,7 @@ void WebServer::setupRoutes() {
                     "<html><body style='font-family:sans-serif;text-align:center;padding:50px;'>"
                     "<h1>NFC Reader</h1>"
                     "<p>Web interface files missing!</p>"
-                    "<p>Please flash <b>spiffs.bin</b> to the device.</p>"
+                    "<p>Please flash the filesystem binary to the device.</p>"
                     "</body></html>");
             } else {
                 request->redirect("http://192.168.4.1/");

@@ -196,7 +196,7 @@ bool UpdateChecker::parseReleaseJson(const char* json, size_t length) {
     // Compare versions
     _info.available = compareVersions(_info.latestVersion, _info.currentVersion) > 0;
 
-    // Find firmware and SPIFFS download URLs
+    // Find firmware and filesystem download URLs
     // NFC-reader uses exact filename match: firmware.bin and spiffs.bin
     JsonArray assets = doc["assets"];
     for (JsonObject asset : assets) {
@@ -208,8 +208,8 @@ bool UpdateChecker::parseReleaseJson(const char* json, size_t length) {
                 if (strcmp(name, "firmware.bin") == 0) {
                     strlcpy(_info.downloadUrl, downloadUrl, sizeof(_info.downloadUrl));
                 }
-                // Exact match for spiffs.bin
-                else if (strcmp(name, "spiffs.bin") == 0) {
+                // Exact match for littlefs.bin (or legacy spiffs.bin)
+                else if (strcmp(name, "littlefs.bin") == 0 || strcmp(name, "spiffs.bin") == 0) {
                     strlcpy(_info.spiffsUrl, downloadUrl, sizeof(_info.spiffsUrl));
                 }
             }
@@ -366,15 +366,15 @@ void UpdateChecker::performOTAUpdate() {
         return;
     }
 
-    // Step 2: Download and install SPIFFS (if URL available)
+    // Step 2: Download and install filesystem (if URL available)
     if (strlen(_info.spiffsUrl) > 0) {
         _info.downloadProgress = 0;
         if (_stateCallback) _stateCallback();
 
-        if (!downloadAndInstall(_info.spiffsUrl, U_SPIFFS, "SPIFFS")) {
-            // SPIFFS failed, but firmware was already installed
+        if (!downloadAndInstall(_info.spiffsUrl, U_SPIFFS, "Filesystem")) {
+            // Filesystem failed, but firmware was already installed
             // Log warning but still restart to apply firmware
-            logger.warn("SPIFFS update failed, but firmware was installed");
+            logger.warn("Filesystem update failed, but firmware was installed");
         }
     }
 

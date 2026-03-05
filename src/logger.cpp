@@ -2,9 +2,9 @@
 #include "config.h"
 #include <time.h>
 #include <stdarg.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 
-#define FILESYSTEM SPIFFS
+#define FILESYSTEM LittleFS
 
 Logger logger;
 
@@ -29,8 +29,8 @@ void Logger::begin() {
     _lastSave = 0;
 
     // Initialize filesystem
-    if (!SPIFFS.begin(true)) {
-        Serial.println("[LOGGER] SPIFFS mount failed");
+    if (!LittleFS.begin(true)) {
+        Serial.println("[LOGGER] LittleFS mount failed");
     }
 
     // Load existing logs from file
