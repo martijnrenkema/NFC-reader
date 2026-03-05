@@ -1,6 +1,7 @@
 #include "update_checker.h"
 #include "config.h"
 #include "logger.h"
+#include "mqtt_handler.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -353,6 +354,9 @@ void UpdateChecker::performOTAUpdate() {
     _info.downloadProgress = 0;
     memset(_info.errorMessage, 0, sizeof(_info.errorMessage));
     if (_stateCallback) _stateCallback();
+
+    // Disconnect MQTT to free resources and prevent timeout errors during long download
+    mqttHandler.disconnect();
 
     // Step 1: Download and install firmware
     if (!downloadAndInstall(_info.downloadUrl, U_FLASH, "Firmware")) {

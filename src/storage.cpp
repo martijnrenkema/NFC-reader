@@ -133,6 +133,7 @@ bool Storage::hasMQTTConfig() {
 void Storage::reset() {
     memset(&_settings, 0, sizeof(_settings));
     prefs.clear();
+    clearTagRegistry();
     Serial.println("[STORAGE] Factory reset complete");
 }
 
@@ -150,8 +151,9 @@ void Storage::ensureDefaults(NFCSettings& settings) {
 void Storage::loadTagCache() {
     tagPrefs.begin(NVS_TAG_NAMESPACE, true);
     _tagCacheCount = tagPrefs.getUChar(NVS_TAG_COUNT, 0);
+    if (_tagCacheCount > MAX_REGISTERED_TAGS) _tagCacheCount = MAX_REGISTERED_TAGS;
 
-    for (uint8_t i = 0; i < _tagCacheCount && i < MAX_REGISTERED_TAGS; i++) {
+    for (uint8_t i = 0; i < _tagCacheCount; i++) {
         char keyUid[8], keyName[10];
         snprintf(keyUid, sizeof(keyUid), "uid_%d", i);
         snprintf(keyName, sizeof(keyName), "name_%d", i);

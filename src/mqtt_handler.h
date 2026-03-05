@@ -109,7 +109,6 @@ private:
     static void mqttCallback(char* topic, uint8_t* payload, unsigned int length);
 
     String getBaseTopic();
-    String getDeviceJson();
 };
 
 extern MQTTHandler mqttHandler;

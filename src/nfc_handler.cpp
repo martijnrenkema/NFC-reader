@@ -104,17 +104,10 @@ void NFCHandler::loop() {
     // Give WiFi stack time to process
     yield();
 
-    if (success) {
-        // Bounds check to prevent buffer overflow
-        if (uidLength > sizeof(uid)) {
-            Serial.printf("[NFC] ERROR: UID too long (%d bytes), skipping\n", uidLength);
-            logger.errorf("UID too long: %d bytes", uidLength);
-            return;
-        }
-
+    if (success && uidLength > 0 && uidLength <= sizeof(uid)) {
         // Format UID as string
         char uidStr[32];
-        formatUID(uid, uidLength, uidStr);
+        formatUID(uid, uidLength, uidStr, sizeof(uidStr));
 
         // Check debounce
         if (!isDebounced(uidStr)) {
@@ -191,17 +184,27 @@ void NFCHandler::onTagScanned(ScanCallback callback) {
     _callback = callback;
 }
 
-void NFCHandler::formatUID(uint8_t* uid, uint8_t uidLength, char* output) {
+void NFCHandler::formatUID(uint8_t* uid, uint8_t uidLength, char* output, size_t outputSize) {
     // Format as XX:XX:XX:XX... (colon separated hex)
     // Optimized: O(n) instead of O(n²) by tracking position
-    char* ptr = output;
+    // Required buffer: uidLength * 3 (2 hex + colon) - 1 (no trailing colon) + 1 (null) = uidLength * 3
+    if (outputSize < (size_t)(uidLength * 3)) {
+        output[0] = '\0';  // Buffer too small
+        return;
+    }
 
-    for (uint8_t i = 0; i < uidLength; i++) {
-        if (i > 0) {
+    char* ptr = output;
+    char* end = output + outputSize - 1;  // Leave room for null terminator
+
+    for (uint8_t i = 0; i < uidLength && ptr < end; i++) {
+        if (i > 0 && ptr < end) {
             *ptr++ = ':';
         }
-        // Write hex directly to buffer
-        ptr += snprintf(ptr, 3, "%02X", uid[i]);
+        // Write hex directly to buffer with bounds check
+        size_t remaining = end - ptr;
+        if (remaining >= 2) {
+            ptr += snprintf(ptr, remaining + 1, "%02X", uid[i]);
+        }
     }
     *ptr = '\0';
 }
@@ -232,6 +235,12 @@ bool NFCHandler::isDebounced(const char* uid) {
 void NFCHandler::runDiagnostics() {
     // Simplified diagnostics
     Serial.println("\n========== PN532 DIAGNOSTICS ==========");
+
+    if (!nfc) {
+        Serial.println("ERROR: PN532 not initialized");
+        Serial.println("========================================\n");
+        return;
+    }
 
     uint32_t versiondata = nfc->getFirmwareVersion();
     if (versiondata) {

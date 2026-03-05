@@ -61,25 +61,19 @@ void WebServer::loop() {
         _pendingActionTime = 0;
         wifiManager.connect(_pendingWifiSsid.c_str(), _pendingWifiPassword.c_str());
         if (_settingsCallback) _settingsCallback();
-    }
-
-    if (_pendingMqttConnect) {
+    } else if (_pendingMqttConnect) {
         _pendingMqttConnect = false;
         _pendingActionTime = 0;
         mqttHandler.disconnect();
         mqttHandler.connect(_pendingMqttHost.c_str(), _pendingMqttPort,
                            _pendingMqttUser.c_str(), _pendingMqttPassword.c_str());
         if (_settingsCallback) _settingsCallback();
-    }
-
-    if (_pendingReset) {
+    } else if (_pendingReset) {
         _pendingReset = false;
         _pendingActionTime = 0;
         storage.reset();
         ESP.restart();
-    }
-
-    if (_pendingRestart) {
+    } else if (_pendingRestart) {
         _pendingRestart = false;
         _pendingActionTime = 0;
         ESP.restart();

@@ -107,8 +107,10 @@ void onTagScanned(const char* uid) {
     // Publish to MQTT
     mqttHandler.publishTagScanned(uid);
 
-    // Update LED status
-    updateLedStatus();
+    // Force LED state re-evaluation after scan flash completes
+    // Without this, the scan flash restores _previousMode (pre-scan) and
+    // updateLedStatus() cache thinks state hasn't changed, leaving wrong mode
+    lastLedState = LedState::UNKNOWN;
 }
 
 // OTA handlers

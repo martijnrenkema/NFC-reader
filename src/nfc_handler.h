@@ -56,7 +56,7 @@ private:
     char _debounceUID[32] = {0};
     unsigned long _debounceTime = 0;
 
-    void formatUID(uint8_t* uid, uint8_t uidLength, char* output);
+    void formatUID(uint8_t* uid, uint8_t uidLength, char* output, size_t outputSize);
     void addToHistory(const char* uid);
     bool isDebounced(const char* uid);
 };

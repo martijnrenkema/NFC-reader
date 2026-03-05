@@ -335,7 +335,9 @@ void MQTTHandler::publishLastUIDSensorDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
-    String p = "{\"name\":\"Last Scanned UID\",";
+    String p;
+    p.reserve(320);
+    p = "{\"name\":\"Last Scanned UID\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_uid\",";
     p += "\"stat_t\":\"" + b + "/last_uid\",";
     p += "\"avty_t\":\"" + b + "/availability\",";
@@ -351,7 +353,9 @@ void MQTTHandler::publishTagPresentBinarySensorDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
-    String p = "{\"name\":\"Tag Present\",";
+    String p;
+    p.reserve(300);
+    p = "{\"name\":\"Tag Present\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_tag\",";
     p += "\"stat_t\":\"" + b + "/tag_present\",";
     p += "\"avty_t\":\"" + b + "/availability\",";
@@ -367,7 +371,9 @@ void MQTTHandler::publishWiFiSensorDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
-    String p = "{\"name\":\"WiFi Signal\",";
+    String p;
+    p.reserve(320);
+    p = "{\"name\":\"WiFi Signal\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_wifi\",";
     p += "\"stat_t\":\"" + b + "/wifi_signal\",";
     p += "\"avty_t\":\"" + b + "/availability\",";
@@ -425,25 +431,14 @@ String MQTTHandler::getBaseTopic() {
     return String(MQTT_TOPIC_PREFIX) + "_" + _deviceId;
 }
 
-String MQTTHandler::getDeviceJson() {
-    StaticJsonDocument<256> device;
-    device["identifiers"][0] = "nfc_reader_" + _deviceId;
-    device["name"] = "NFC Reader";
-    device["model"] = "ESP32-C3 + PN532";
-    device["manufacturer"] = "DIY";
-    device["sw_version"] = FIRMWARE_VERSION;
-
-    String output;
-    serializeJson(device, output);
-    return output;
-}
-
 void MQTTHandler::publishNightModeSwitchDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
     // Home Assistant switch entity for night mode
-    String p = "{\"name\":\"Night Mode\",";
+    String p;
+    p.reserve(320);
+    p = "{\"name\":\"Night Mode\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_night\",";
     p += "\"stat_t\":\"" + b + "/night_mode\",";
     p += "\"cmd_t\":\"" + b + "/night_mode/set\",";
@@ -462,7 +457,9 @@ void MQTTHandler::publishTagScannedTriggerDiscovery() {
     // Single device trigger for tag scanned events
     // Fires on ANY tag - user specifies UID in automation condition:
     //   condition: "{{ trigger.payload == 'C3:7B:70:19' }}"
-    String p = "{\"automation_type\":\"trigger\",";
+    String p;
+    p.reserve(350);
+    p = "{\"automation_type\":\"trigger\",";
     p += "\"type\":\"tag_scanned\",";
     p += "\"subtype\":\"nfc\",";
     p += "\"topic\":\"" + b + "/tag/scanned\",";
@@ -482,7 +479,9 @@ void MQTTHandler::publishNamedTagTriggerDiscovery(const char* name) {
 
     // Device trigger for named tag
     // Shows as "tag_scanned <name>" in HA device triggers
-    String p = "{\"automation_type\":\"trigger\",";
+    String p;
+    p.reserve(350);
+    p = "{\"automation_type\":\"trigger\",";
     p += "\"type\":\"tag_scanned\",";
     p += "\"subtype\":\"" + safeName + "\",";
     p += "\"topic\":\"" + b + "/tag/" + safeName + "\",";
@@ -527,7 +526,9 @@ void MQTTHandler::publishUpdateAvailableBinarySensorDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
-    String p = "{\"name\":\"Update Available\",";
+    String p;
+    p.reserve(320);
+    p = "{\"name\":\"Update Available\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_update\",";
     p += "\"stat_t\":\"" + b + "/update_available\",";
     p += "\"avty_t\":\"" + b + "/availability\",";
@@ -544,7 +545,9 @@ void MQTTHandler::publishLatestVersionSensorDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
-    String p = "{\"name\":\"Latest Version\",";
+    String p;
+    p.reserve(300);
+    p = "{\"name\":\"Latest Version\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_latest_ver\",";
     p += "\"stat_t\":\"" + b + "/latest_version\",";
     p += "\"avty_t\":\"" + b + "/availability\",";
@@ -560,7 +563,9 @@ void MQTTHandler::publishCurrentVersionSensorDiscovery() {
     String b = getBaseTopic();
     String devId = "nfc_reader_" + _deviceId;
 
-    String p = "{\"name\":\"Current Version\",";
+    String p;
+    p.reserve(300);
+    p = "{\"name\":\"Current Version\",";
     p += "\"uniq_id\":\"nfcr_" + _deviceId + "_current_ver\",";
     p += "\"stat_t\":\"" + b + "/current_version\",";
     p += "\"avty_t\":\"" + b + "/availability\",";

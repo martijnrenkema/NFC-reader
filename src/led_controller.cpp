@@ -266,8 +266,13 @@ void LedController::setNightMode(bool enabled) {
     _nightMode = enabled;
     if (enabled) {
         // Immediately turn off LED
-        setRGB(0, 0, 0);
+        neopixelWrite(RGB_LED_PIN, 0, 0, 0);
         digitalWrite(LED_PIN, LOW);
+    } else {
+        // Force LED state refresh on next loop iteration
+        // Without this, ON mode won't restore (it checks !_ledState which is still true)
+        _ledState = false;
     }
+    // Note: PN532 LED is hardware-controlled and cannot be disabled via software
     Serial.printf("[LED] Night mode: %s\n", enabled ? "ON" : "OFF");
 }

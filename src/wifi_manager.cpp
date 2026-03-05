@@ -2,6 +2,7 @@
 #include "config.h"
 #include "storage.h"
 #include "logger.h"
+#include <esp_wifi.h>
 
 WiFiManager wifiManager;
 
@@ -10,6 +11,10 @@ void WiFiManager::begin() {
     WiFi.mode(WIFI_STA);
     WiFi.setHostname(OTA_HOSTNAME);  // Set hostname to "nfc-reader" instead of default "ESP32-xxxx"
     WiFi.setAutoReconnect(true);
+
+    // Maximize WiFi range and reliability
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Max TX power
+    esp_wifi_set_ps(WIFI_PS_NONE);         // Disable power saving (improves responsiveness + range)
 
     // Check if WiFi is already connected (can happen after OTA update/restart)
     if (WiFi.status() == WL_CONNECTED) {
