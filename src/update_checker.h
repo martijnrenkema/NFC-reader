@@ -2,6 +2,7 @@
 #define UPDATE_CHECKER_H
 
 #include <Arduino.h>
+#include <mutex>
 #include "config.h"
 
 // Update check states
@@ -35,7 +36,9 @@ public:
 
     // Get current state
     UpdateCheckState getState() const { return _state; }
-    const UpdateInfo& getInfo() const { return _info; }
+    // Copy of the update info; _info is written by the check task and read
+    // from the main loop and the async webserver task
+    void getInfoSnapshot(UpdateInfo& out);
     bool isUpdateAvailable() const { return _info.available; }
     const char* getLatestVersion() const { return _info.latestVersion; }
     const char* getCurrentVersion() const { return _info.currentVersion; }
@@ -53,20 +56,26 @@ public:
     void onStateChange(UpdateStateCallback callback) { _stateCallback = callback; }
 
 private:
-    UpdateCheckState _state = UpdateCheckState::IDLE;
+    volatile UpdateCheckState _state = UpdateCheckState::IDLE;
     UpdateInfo _info;
+    std::mutex _infoMutex;
     UpdateStateCallback _stateCallback = nullptr;
 
     unsigned long _lastAutoCheck = 0;
+    bool _firstAutoCheckDone = false;
     unsigned long _bootTime = 0;  // Stored at begin() for overflow-safe timing
-    bool _checkRequested = false;
-    bool _otaRequested = false;
+    volatile bool _checkRequested = false;
+    volatile bool _otaRequested = false;
 
-    // Actual HTTP check (blocking, called from loop)
+    // HTTP check runs in its own FreeRTOS task so the (up to 15s) TLS +
+    // GitHub API call doesn't freeze the main loop (NFC, LED, captive portal)
+    void startCheckTask();
+    static void checkTask(void* arg);
     void performCheck();
-    bool fetchGitHubRelease();
-    bool parseReleaseJson(const char* json, size_t length);
+    bool fetchGitHubRelease(UpdateInfo& info);
+    bool parseReleaseJson(const char* json, size_t length, UpdateInfo& info);
     int compareVersions(const char* v1, const char* v2);
+    void setErrorf(const char* format, ...);
 
     void performOTAUpdate();
     bool downloadAndInstall(const char* url, int updateType, const char* label);

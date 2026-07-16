@@ -98,6 +98,8 @@ void Logger::saveToFile() {
         return;
     }
 
+    std::lock_guard<std::mutex> lock(_mutex);
+
     // Write header
     LogFileHeader header;
     header.magic = LOG_FILE_MAGIC;
@@ -171,6 +173,7 @@ void Logger::errorf(const char* format, ...) {
 }
 
 void Logger::addEntry(LogLevel level, const char* message) {
+    std::lock_guard<std::mutex> lock(_mutex);
     LogEntry& entry = _entries[_head];
 
     entry.uptimeMs = millis();
@@ -219,9 +222,12 @@ const LogEntry* Logger::getEntry(uint16_t index) {
 }
 
 void Logger::clear() {
-    _head = 0;
-    _count = 0;
-    _dirty = false;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _head = 0;
+        _count = 0;
+        _dirty = false;
+    }
 
     // Delete log file
     FILESYSTEM.remove(LOG_FILE_PATH);
@@ -239,6 +245,8 @@ const char* Logger::levelToString(LogLevel level) {
 }
 
 String Logger::toJson() {
+    std::lock_guard<std::mutex> lock(_mutex);
+
     // Pre-allocate memory to reduce fragmentation
     // Estimate: ~150 bytes per entry (timestamp, level, message)
     String json;

@@ -66,6 +66,19 @@ public:
         _statePublishPending = true;
     }
 
+    // Request discovery publish (safe to call from any context, e.g. the
+    // async webserver task - the actual publish happens in loop())
+    void requestDiscoveryPublish() {
+        _discoveryRequested = true;
+    }
+
+    // Suspend/resume MQTT (safe to call from any context).
+    // PubSubClient is NOT thread-safe: the OTA upload handlers run in the
+    // async webserver task and must not call disconnect() directly while the
+    // main loop is inside _mqttClient.loop().
+    void requestSuspend() { _suspendRequested = true; }
+    void resume() { _suspendRequested = false; }
+
 private:
     WiFiClient _wifiClient;
     PubSubClient _mqttClient;
@@ -81,6 +94,13 @@ private:
     unsigned long _lastPublishStep = 0;
     bool _discoveryPublished = false;
     volatile bool _statePublishPending = false;
+    volatile bool _discoveryRequested = false;
+    volatile bool _suspendRequested = false;
+    bool _suspended = false;
+    // Reconnect backoff: doubles on failure up to 60s, resets on success.
+    // Keeps the (blocking) TCP connect from stalling the loop every 5s when
+    // the broker is unreachable.
+    unsigned long _reconnectInterval = MQTT_RECONNECT_INTERVAL;
 
     // Non-blocking connection state machine
     MqttConnectState _connectState = MqttConnectState::IDLE;

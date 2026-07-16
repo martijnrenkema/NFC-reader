@@ -32,7 +32,7 @@
 // WiFi Settings
 // ===========================================
 #define WIFI_AP_SSID_PREFIX     "NFC-READER-"
-#define WIFI_AP_PASSWORD        "nfc123"
+#define WIFI_AP_PASSWORD        "nfc123"        // <8 chars = WPA2 minimum not met; AP starts open (see wifi_manager)
 #define WIFI_CONNECT_TIMEOUT    30000           // 30 seconds
 #define WIFI_RECONNECT_INTERVAL 60000           // 1 minute
 

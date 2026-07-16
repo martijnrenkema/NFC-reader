@@ -157,7 +157,17 @@ void WiFiManager::startAP() {
 
     const char* apPassword = storage.getAPPassword();
 
-    bool apStarted = WiFi.softAP(_apName.c_str(), apPassword, 1, false, 4);
+    // WPA2 requires a password of at least 8 characters; softAP() rejects
+    // shorter ones and would leave the device unreachable. Fall back to an
+    // open AP so first-time setup keeps working.
+    bool apStarted;
+    if (strlen(apPassword) >= 8) {
+        apStarted = WiFi.softAP(_apName.c_str(), apPassword, 1, false, 4);
+    } else {
+        Serial.println("[WIFI] AP password shorter than 8 chars (WPA2 minimum), starting open AP");
+        logger.warn("AP password <8 chars, AP started without password");
+        apStarted = WiFi.softAP(_apName.c_str(), nullptr, 1, false, 4);
+    }
 
     if (!apStarted) {
         Serial.println("[WIFI] ERROR: Failed to start AP!");
@@ -176,7 +186,6 @@ void WiFiManager::startAP() {
 
     setState(WifiStatus::AP_MODE);
     Serial.printf("[WIFI] AP started: %s\n", _apName.c_str());
-    Serial.printf("[WIFI] AP Password: %s\n", apPassword);
     Serial.printf("[WIFI] AP IP: %s\n", currentIP.toString().c_str());
     logger.infof("AP mode started: %s", _apName.c_str());
 }

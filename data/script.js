@@ -160,7 +160,7 @@ function renderScanHistory(scans) {
             timeStr = `${Math.floor(scan.ago/3600)}h ago`;
         }
         return `<div class="scan-item">
-            <span class="uid">${scan.uid}</span>
+            <span class="uid">${escapeHtml(scan.uid)}</span>
             <span class="time">${timeStr}</span>
         </div>`;
     }).join('');

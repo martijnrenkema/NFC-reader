@@ -19,18 +19,25 @@ private:
     AsyncWebServer* _server = nullptr;
     SettingsCallback _settingsCallback = nullptr;
 
-    // Deferred action flags
-    bool _pendingWifiConnect = false;
-    String _pendingWifiSsid;
-    String _pendingWifiPassword;
-    bool _pendingMqttConnect = false;
-    String _pendingMqttHost;
+    // Deferred action flags. Written by HTTP handlers (async webserver task),
+    // consumed by loop() (main task). Fixed buffers + spinlock instead of
+    // String to avoid cross-task heap races.
+    portMUX_TYPE _pendingMux = portMUX_INITIALIZER_UNLOCKED;
+    volatile bool _pendingWifiConnect = false;
+    char _pendingWifiSsid[64] = {0};
+    char _pendingWifiPassword[64] = {0};
+    volatile bool _pendingMqttConnect = false;
+    char _pendingMqttHost[64] = {0};
     uint16_t _pendingMqttPort = 1883;
-    String _pendingMqttUser;
-    String _pendingMqttPassword;
-    bool _pendingReset = false;
-    bool _pendingRestart = false;
-    unsigned long _pendingActionTime = 0;
+    char _pendingMqttUser[32] = {0};
+    char _pendingMqttPassword[64] = {0};
+    volatile bool _pendingReset = false;
+    volatile bool _pendingRestart = false;
+    volatile unsigned long _pendingActionTime = 0;
+    // Deferred MQTT trigger cleanup (PubSubClient may only be used from the
+    // main task)
+    volatile bool _pendingTriggerCleanup = false;
+    char _pendingCleanupUid[32] = {0};
 
     void setupRoutes();
     void handleStatus(AsyncWebServerRequest* request);

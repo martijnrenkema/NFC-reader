@@ -18,8 +18,8 @@ NFCSettings settings;
 // Time sync
 bool timeConfigured = false;
 
-// OTA state tracking
-bool otaInProgress = false;
+// OTA state tracking (volatile: also set from the async webserver task)
+volatile bool otaInProgress = false;
 
 // Configure NTP time sync
 void setupTimeSync() {
@@ -211,6 +211,15 @@ void loop() {
 
     nfcHandler.loop();
     ledController.loop();
+
+    // Push tag_present changes to MQTT right away; otherwise HA only sees
+    // "tag removed" on the next periodic state publish (up to 30s later)
+    static bool lastTagPresent = false;
+    bool tagPresent = nfcHandler.isTagPresent();
+    if (tagPresent != lastTagPresent) {
+        lastTagPresent = tagPresent;
+        mqttHandler.requestStatePublish();
+    }
 
     // Update LED status periodically (check for state changes)
     // Now efficient because it only updates LED when state actually changes

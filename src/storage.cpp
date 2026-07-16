@@ -213,6 +213,8 @@ bool Storage::registerTag(const char* uid, const char* name) {
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     // Check if already registered (update name) - RAM lookup
     for (uint8_t i = 0; i < _tagCacheCount; i++) {
         if (strcmp(_tagCache[i].uid, uid) == 0) {
@@ -247,6 +249,8 @@ bool Storage::unregisterTag(const char* uid) {
     if (!uid || strlen(uid) == 0) {
         return false;
     }
+
+    std::lock_guard<std::mutex> lock(_tagMutex);
 
     // Find in cache
     int foundIndex = -1;
@@ -293,6 +297,8 @@ bool Storage::getTagName(const char* uid, char* buffer, size_t bufferSize) {
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     // Fast RAM lookup - no NVS access!
     for (uint8_t i = 0; i < _tagCacheCount; i++) {
         if (strcmp(_tagCache[i].uid, uid) == 0) {
@@ -309,6 +315,8 @@ uint8_t Storage::getRegisteredTagCount() {
 }
 
 bool Storage::getRegisteredTag(uint8_t index, TagEntry& entry) {
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     if (index >= _tagCacheCount) {
         return false;
     }
@@ -319,6 +327,8 @@ bool Storage::getRegisteredTag(uint8_t index, TagEntry& entry) {
 }
 
 void Storage::clearTagRegistry() {
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     // Clear cache
     _tagCacheCount = 0;
     memset(_tagCache, 0, sizeof(_tagCache));

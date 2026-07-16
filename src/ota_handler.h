@@ -15,6 +15,7 @@ public:
     void onEnd(void (*callback)());
 
 private:
+    bool _started = false;
     OTACallback _progressCallback = nullptr;
     void (*_startCallback)() = nullptr;
     void (*_endCallback)() = nullptr;
