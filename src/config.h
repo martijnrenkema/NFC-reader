@@ -35,8 +35,13 @@
 // WPA2 requires 8-63 characters; softAP() rejects anything shorter and the AP
 // would never start. Enforced by a static_assert in storage.cpp.
 #define WIFI_AP_PASSWORD        "nfcreader"
-#define WIFI_CONNECT_TIMEOUT    30000           // 30 seconds
-#define WIFI_RECONNECT_INTERVAL 60000           // 1 minute
+// A weak signal (around -85 dBm) can need ~30s to associate, which made a 30s
+// timeout a coin flip. 45s gives the first attempt room to succeed.
+#define WIFI_CONNECT_TIMEOUT    45000           // 45 seconds
+// Initial retry delay after a failed attempt; doubles up to WIFI_RECONNECT_MAX.
+// A fixed minute meant the device sat idle far longer than it spent trying.
+#define WIFI_RECONNECT_INTERVAL 5000            // 5 seconds
+#define WIFI_RECONNECT_MAX      60000           // 1 minute
 
 // ===========================================
 // MQTT Settings
@@ -88,7 +93,7 @@
 // ===========================================
 // Firmware Version
 // ===========================================
-#define FIRMWARE_VERSION        "1.9.0"
+#define FIRMWARE_VERSION        "1.9.1"
 
 // ===========================================
 // GitHub Repo (for updates)

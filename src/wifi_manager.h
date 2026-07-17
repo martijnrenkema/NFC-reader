@@ -45,6 +45,10 @@ private:
     unsigned long _connectStartTime = 0;
     unsigned long _lastReconnectAttempt = 0;
     uint8_t _reconnectAttempts = 0;
+    // Retry backoff: doubles on each failed attempt up to WIFI_RECONNECT_MAX,
+    // resets once connected. Keeps the device from idling a full minute
+    // between attempts while it is off the network.
+    unsigned long _reconnectInterval = WIFI_RECONNECT_INTERVAL;
     String _ssid;
     String _password;
     String _apName;

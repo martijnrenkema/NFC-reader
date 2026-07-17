@@ -33,6 +33,7 @@ void WiFiManager::loop() {
         case WifiStatus::CONNECTING:
             if (WiFi.status() == WL_CONNECTED) {
                 _reconnectAttempts = 0;
+                _reconnectInterval = WIFI_RECONNECT_INTERVAL;
                 setState(WifiStatus::CONNECTED);
                 Serial.printf("[WIFI] Connected to %s\n", _ssid.c_str());
                 Serial.printf("[WIFI] IP: %s\n", WiFi.localIP().toString().c_str());
@@ -64,8 +65,9 @@ void WiFiManager::loop() {
 
         case WifiStatus::DISCONNECTED:
             // Auto reconnect if we have credentials
-            if (_ssid.length() > 0 && now - _lastReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
-                Serial.println("[WIFI] Attempting reconnect...");
+            if (_ssid.length() > 0 && now - _lastReconnectAttempt >= _reconnectInterval) {
+                Serial.printf("[WIFI] Attempting reconnect (retry delay was %lums)...\n", _reconnectInterval);
+                _reconnectInterval = min(_reconnectInterval * 2, (unsigned long)WIFI_RECONNECT_MAX);
                 connect(_ssid.c_str(), _password.c_str());
             }
             break;
@@ -96,9 +98,12 @@ void WiFiManager::loop() {
                 Serial.printf("[WIFI] IP: %s\n", WiFi.localIP().toString().c_str());
                 logger.infof("WiFi reconnected from AP: %s", WiFi.localIP().toString().c_str());
                 _reconnectAttempts = 0;
+                _reconnectInterval = WIFI_RECONNECT_INTERVAL;
                 stopAP();
                 setState(WifiStatus::CONNECTED);
-            } else if (WiFi.getMode() == WIFI_AP_STA && now - _connectStartTime >= 30000) {
+            } else if (WiFi.getMode() == WIFI_AP_STA && now - _connectStartTime >= WIFI_CONNECT_TIMEOUT) {
+                // Same budget as a normal attempt: this is the only way back to
+                // the LAN, so a weak signal must not have less time here.
                 Serial.println("[WIFI] Background reconnect timeout, staying in AP mode");
                 WiFi.mode(WIFI_AP);
             }
