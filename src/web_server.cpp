@@ -14,9 +14,9 @@
 #define FILESYSTEM LittleFS
 #define UPDATE_ERROR_STRING() Update.errorString()
 
-// External flag from main.cpp
-extern bool otaInProgress;
-extern void updateLedStatus();
+// External flag from main.cpp (volatile: set from the async webserver task,
+// read by the main loop)
+extern volatile bool otaInProgress;
 
 WebServer webServer;
 
@@ -51,32 +51,65 @@ void WebServer::stop() {
 }
 
 void WebServer::loop() {
+    // Deferred MQTT trigger cleanup (handler runs in the async task;
+    // PubSubClient may only be used from the main task)
+    if (_pendingTriggerCleanup) {
+        char uid[sizeof(_pendingCleanupUid)];
+        portENTER_CRITICAL(&_pendingMux);
+        strlcpy(uid, _pendingCleanupUid, sizeof(uid));
+        portEXIT_CRITICAL(&_pendingMux);
+        _pendingTriggerCleanup = false;
+        if (mqttHandler.isConnected()) {
+            mqttHandler.removeOldTagTriggers(uid);
+        }
+    }
+
     if (_pendingActionTime == 0) return;
 
     // Wait for HTTP response to be sent
     if (millis() - _pendingActionTime < 500) return;
 
     if (_pendingWifiConnect) {
+        char ssid[sizeof(_pendingWifiSsid)];
+        char pass[sizeof(_pendingWifiPassword)];
+        portENTER_CRITICAL(&_pendingMux);
+        strlcpy(ssid, _pendingWifiSsid, sizeof(ssid));
+        strlcpy(pass, _pendingWifiPassword, sizeof(pass));
+        portEXIT_CRITICAL(&_pendingMux);
         _pendingWifiConnect = false;
-        _pendingActionTime = 0;
-        wifiManager.connect(_pendingWifiSsid.c_str(), _pendingWifiPassword.c_str());
+        wifiManager.connect(ssid, pass);
         if (_settingsCallback) _settingsCallback();
     } else if (_pendingMqttConnect) {
+        char host[sizeof(_pendingMqttHost)];
+        char user[sizeof(_pendingMqttUser)];
+        char pass[sizeof(_pendingMqttPassword)];
+        uint16_t port;
+        portENTER_CRITICAL(&_pendingMux);
+        strlcpy(host, _pendingMqttHost, sizeof(host));
+        strlcpy(user, _pendingMqttUser, sizeof(user));
+        strlcpy(pass, _pendingMqttPassword, sizeof(pass));
+        port = _pendingMqttPort;
+        portEXIT_CRITICAL(&_pendingMux);
         _pendingMqttConnect = false;
-        _pendingActionTime = 0;
         mqttHandler.disconnect();
-        mqttHandler.connect(_pendingMqttHost.c_str(), _pendingMqttPort,
-                           _pendingMqttUser.c_str(), _pendingMqttPassword.c_str());
+        mqttHandler.connect(host, port, user, pass);
         if (_settingsCallback) _settingsCallback();
     } else if (_pendingReset) {
         _pendingReset = false;
-        _pendingActionTime = 0;
         storage.reset();
         ESP.restart();
     } else if (_pendingRestart) {
         _pendingRestart = false;
-        _pendingActionTime = 0;
         ESP.restart();
+    }
+
+    // One action handled per pass; keep the timer armed while others are
+    // still pending. (A single shared timestamp used to strand a second
+    // action forever when two requests arrived within the 500ms window.)
+    if (_pendingWifiConnect || _pendingMqttConnect || _pendingReset || _pendingRestart) {
+        _pendingActionTime = millis();
+    } else {
+        _pendingActionTime = 0;
     }
 }
 
@@ -203,13 +236,30 @@ void WebServer::setupRoutes() {
         [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
             if (!index) {
                 Serial.printf("[OTA] Firmware update start: %s\n", filename.c_str());
+                if (Update.isRunning()) {
+                    Update.abort();  // clean up a previously aborted upload
+                }
                 otaInProgress = true;
-                updateLedStatus();
-                mqttHandler.disconnect();
+                // Flag only - the main loop suspends MQTT and updates the
+                // LED; PubSubClient/RMT must not be touched from this task
+                mqttHandler.requestSuspend();
+
+                // The client can vanish mid-upload; without this the device
+                // stays stuck in OTA state (MQTT off, LED blinking) forever
+                request->onDisconnect([]() {
+                    if (Update.isRunning()) {
+                        Update.abort();
+                        Serial.println("[OTA] Firmware upload aborted (client disconnected)");
+                        otaInProgress = false;
+                        mqttHandler.resume();
+                    }
+                });
 
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
                     Serial.printf("[OTA] Update.begin failed: %s\n", UPDATE_ERROR_STRING());
                     Update.printError(Serial);
+                    otaInProgress = false;
+                    mqttHandler.resume();
                     return;
                 }
                 Serial.println("[OTA] Update.begin success");
@@ -220,6 +270,8 @@ void WebServer::setupRoutes() {
             if (len) {
                 if (Update.write(data, len) != len) {
                     Serial.printf("[OTA] Update.write failed: %s\n", UPDATE_ERROR_STRING());
+                    otaInProgress = false;
+                    mqttHandler.resume();
                     return;
                 }
             }
@@ -231,7 +283,7 @@ void WebServer::setupRoutes() {
                     Serial.printf("[OTA] Firmware update failed: %s\n", UPDATE_ERROR_STRING());
                     Update.printError(Serial);
                     otaInProgress = false;
-                    updateLedStatus();
+                    mqttHandler.resume();
                 }
             }
         }
@@ -256,13 +308,26 @@ void WebServer::setupRoutes() {
         [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
             if (!index) {
                 Serial.printf("[OTA] Filesystem update start: %s\n", filename.c_str());
+                if (Update.isRunning()) {
+                    Update.abort();  // clean up a previously aborted upload
+                }
                 otaInProgress = true;
-                updateLedStatus();
-                mqttHandler.disconnect();
+                mqttHandler.requestSuspend();
+
+                request->onDisconnect([]() {
+                    if (Update.isRunning()) {
+                        Update.abort();
+                        Serial.println("[OTA] Filesystem upload aborted (client disconnected)");
+                        otaInProgress = false;
+                        mqttHandler.resume();
+                    }
+                });
 
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
                     Serial.printf("[OTA] Update.begin failed: %s\n", UPDATE_ERROR_STRING());
                     Update.printError(Serial);
+                    otaInProgress = false;
+                    mqttHandler.resume();
                     return;
                 }
                 Serial.println("[OTA] Update.begin success");
@@ -273,6 +338,8 @@ void WebServer::setupRoutes() {
             if (len) {
                 if (Update.write(data, len) != len) {
                     Serial.printf("[OTA] Update.write failed: %s\n", UPDATE_ERROR_STRING());
+                    otaInProgress = false;
+                    mqttHandler.resume();
                     return;
                 }
             }
@@ -284,7 +351,7 @@ void WebServer::setupRoutes() {
                     Serial.printf("[OTA] Filesystem update failed: %s\n", UPDATE_ERROR_STRING());
                     Update.printError(Serial);
                     otaInProgress = false;
-                    updateLedStatus();
+                    mqttHandler.resume();
                 }
             }
         }
@@ -292,7 +359,9 @@ void WebServer::setupRoutes() {
 
     // Tag Registry - List all registered tags
     _server->on("/api/tags", HTTP_GET, [](AsyncWebServerRequest* request) {
-        DynamicJsonDocument doc(2048);
+        // 50 tags x (uid + name string copies + object overhead) exceeds 2KB;
+        // too small a pool makes ArduinoJson drop entries silently
+        DynamicJsonDocument doc(6144);
         JsonArray tags = doc.createNestedArray("tags");
 
         uint8_t count = storage.getRegisteredTagCount();
@@ -328,10 +397,10 @@ void WebServer::setupRoutes() {
         }
 
         if (storage.registerTag(uid.c_str(), name.c_str())) {
-            // Republish MQTT discovery to include the new tag trigger
-            if (mqttHandler.isConnected()) {
-                mqttHandler.publishDiscovery();
-            }
+            // Republish MQTT discovery to include the new tag trigger.
+            // Flag only - the actual publish happens in the main loop
+            // (PubSubClient is not thread-safe).
+            mqttHandler.requestDiscoveryPublish();
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Tag registered\"}");
         } else {
             request->send(500, "application/json", "{\"error\":\"Failed to register tag (registry full or invalid name)\"}");
@@ -355,7 +424,7 @@ void WebServer::setupRoutes() {
     });
 
     // Remove old UID-based triggers from Home Assistant (v1.3.0 cleanup)
-    _server->on("/api/cleanup_trigger", HTTP_POST, [](AsyncWebServerRequest* request) {
+    _server->on("/api/cleanup_trigger", HTTP_POST, [this](AsyncWebServerRequest* request) {
         if (!request->hasParam("uid", true)) {
             request->send(400, "application/json", "{\"error\":\"Missing uid parameter\"}");
             return;
@@ -364,7 +433,12 @@ void WebServer::setupRoutes() {
         String uid = request->getParam("uid", true)->value();
 
         if (mqttHandler.isConnected()) {
-            mqttHandler.removeOldTagTriggers(uid.c_str());
+            // Deferred to loop(): PubSubClient may only be used from the
+            // main task
+            portENTER_CRITICAL(&_pendingMux);
+            strlcpy(_pendingCleanupUid, uid.c_str(), sizeof(_pendingCleanupUid));
+            portEXIT_CRITICAL(&_pendingMux);
+            _pendingTriggerCleanup = true;
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Trigger removed from Home Assistant\"}");
         } else {
             request->send(503, "application/json", "{\"error\":\"MQTT not connected\"}");
@@ -459,8 +533,10 @@ void WebServer::handleSaveWifi(AsyncWebServerRequest* request) {
 
     request->send(200, "application/json", "{\"success\":true,\"message\":\"WiFi saved, connecting...\"}");
 
-    _pendingWifiSsid = ssid;
-    _pendingWifiPassword = password;
+    portENTER_CRITICAL(&_pendingMux);
+    strlcpy(_pendingWifiSsid, ssid.c_str(), sizeof(_pendingWifiSsid));
+    strlcpy(_pendingWifiPassword, password.c_str(), sizeof(_pendingWifiPassword));
+    portEXIT_CRITICAL(&_pendingMux);
     _pendingWifiConnect = true;
     _pendingActionTime = millis();
 }
@@ -493,10 +569,12 @@ void WebServer::handleSaveMqtt(AsyncWebServerRequest* request) {
 
     request->send(200, "application/json", "{\"success\":true,\"message\":\"MQTT saved, connecting...\"}");
 
-    _pendingMqttHost = host;
+    portENTER_CRITICAL(&_pendingMux);
+    strlcpy(_pendingMqttHost, host.c_str(), sizeof(_pendingMqttHost));
     _pendingMqttPort = port;
-    _pendingMqttUser = user;
-    _pendingMqttPassword = password;
+    strlcpy(_pendingMqttUser, user.c_str(), sizeof(_pendingMqttUser));
+    strlcpy(_pendingMqttPassword, password.c_str(), sizeof(_pendingMqttPassword));
+    portEXIT_CRITICAL(&_pendingMux);
     _pendingMqttConnect = true;
     _pendingActionTime = millis();
 }
@@ -557,15 +635,15 @@ void WebServer::handleScanHistory(AsyncWebServerRequest* request) {
     DynamicJsonDocument doc(1024);
     JsonArray scans = doc.createNestedArray("scans");
 
-    uint8_t count = nfcHandler.getHistoryCount();
+    // Snapshot: this handler runs in the async task while the main loop may
+    // be writing new scans into the ring buffer
+    ScanEntry history[NFC_SCAN_HISTORY_SIZE];
+    uint8_t count = nfcHandler.copyHistory(history, NFC_SCAN_HISTORY_SIZE);
     for (uint8_t i = 0; i < count; i++) {
-        const ScanEntry* entry = nfcHandler.getHistoryEntry(i);
-        if (entry) {
-            JsonObject scan = scans.createNestedObject();
-            scan["uid"] = entry->uid;
-            scan["time"] = entry->timestamp;
-            scan["ago"] = (millis() - entry->timestamp) / 1000;  // seconds ago
-        }
+        JsonObject scan = scans.createNestedObject();
+        scan["uid"] = history[i].uid;
+        scan["time"] = history[i].timestamp;
+        scan["ago"] = (millis() - history[i].timestamp) / 1000;  // seconds ago
     }
 
     String response;
@@ -583,7 +661,8 @@ void WebServer::handleUpdateCheck(AsyncWebServerRequest* request) {
 }
 
 void WebServer::handleUpdateStatus(AsyncWebServerRequest* request) {
-    const UpdateInfo& info = updateChecker.getInfo();
+    UpdateInfo info;
+    updateChecker.getInfoSnapshot(info);
     UpdateCheckState state = updateChecker.getState();
 
     StaticJsonDocument<512> doc;
@@ -619,7 +698,8 @@ void WebServer::handleUpdateInstall(AsyncWebServerRequest* request) {
         return;
     }
 
-    if (updateChecker.getState() != UpdateCheckState::IDLE) {
+    UpdateCheckState state = updateChecker.getState();
+    if (state == UpdateCheckState::CHECKING || state == UpdateCheckState::DOWNLOADING) {
         request->send(400, "application/json", "{\"error\":\"Update already in progress\"}");
         return;
     }

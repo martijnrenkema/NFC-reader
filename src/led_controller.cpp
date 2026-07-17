@@ -37,6 +37,15 @@ void LedController::loop() {
 
     // Skip all LED updates if night mode is active
     if (_nightMode) {
+        // Apply the "off" state here in the main task; setNightMode() may be
+        // called from the async webserver task and must not touch the RMT
+        // peripheral concurrently with this loop
+        if (_nightDirty) {
+            _nightDirty = false;
+            neopixelWrite(RGB_LED_PIN, 0, 0, 0);
+            digitalWrite(LED_PIN, LOW);
+            _ledState = false;
+        }
         // Still process scan flash state machine to track state
         if (_scanState != ScanFlashState::IDLE) {
             unsigned long elapsed = now - _scanFlashTime;
@@ -54,6 +63,12 @@ void LedController::loop() {
             }
         }
         return;  // Skip all visual updates
+    }
+
+    // Just left night mode: force modes to repaint the LED
+    if (_nightDirty) {
+        _nightDirty = false;
+        _ledState = false;
     }
 
     // Handle scan flash state machine FIRST (takes priority)
@@ -263,16 +278,10 @@ void LedController::showError() {
 }
 
 void LedController::setNightMode(bool enabled) {
+    // Called from the async webserver task and the MQTT callback; the actual
+    // LED write happens in loop() (main task) to avoid concurrent RMT access
     _nightMode = enabled;
-    if (enabled) {
-        // Immediately turn off LED
-        neopixelWrite(RGB_LED_PIN, 0, 0, 0);
-        digitalWrite(LED_PIN, LOW);
-    } else {
-        // Force LED state refresh on next loop iteration
-        // Without this, ON mode won't restore (it checks !_ledState which is still true)
-        _ledState = false;
-    }
+    _nightDirty = true;
     // Note: PN532 LED is hardware-controlled and cannot be disabled via software
     Serial.printf("[LED] Night mode: %s\n", enabled ? "ON" : "OFF");
 }

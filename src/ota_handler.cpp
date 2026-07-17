@@ -6,6 +6,13 @@
 OTAHandler otaHandler;
 
 void OTAHandler::begin() {
+    // begin() is called on every WiFi (re)connect; ArduinoOTA must only be
+    // initialized once (repeated begin() re-registers mDNS/UDP listeners)
+    if (_started) {
+        return;
+    }
+    _started = true;
+
     ArduinoOTA.setHostname(OTA_HOSTNAME);
     ArduinoOTA.setPassword(storage.getOTAPassword());
 

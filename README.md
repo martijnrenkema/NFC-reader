@@ -112,7 +112,7 @@ esptool.py --port /dev/cu.usbmodem* --chip esp32c3 --baud 921600 \
 ### Step 2: Initial Setup
 
 1. Power on the device - LED will pulse orange (AP mode)
-2. Connect to WiFi network: `NFC-READER-XXXX` (password: `nfc123`)
+2. Connect to WiFi network: `NFC-READER-XXXX` (password: `nfcreader`)
 3. Open browser: `http://192.168.4.1`
 4. Configure your WiFi credentials
 5. Device restarts and connects to your network
@@ -323,7 +323,7 @@ automation:
 
 | Function | Default | Changeable |
 |----------|---------|------------|
-| WiFi AP | `nfc123` | Yes |
+| WiFi AP | `nfcreader` | Yes |
 | OTA Updates | `nfc-ota` | Yes |
 
 Change passwords in web interface under **Security**. Minimum 8 characters.

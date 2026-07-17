@@ -155,6 +155,8 @@ void WiFiManager::startAP() {
     IPAddress subnet(255, 255, 255, 0);
     WiFi.softAPConfig(apIP, gateway, subnet);
 
+    // Always 8+ characters: getAPPassword() falls back to WIFI_AP_PASSWORD
+    // when the stored password is too short for WPA2.
     const char* apPassword = storage.getAPPassword();
 
     bool apStarted = WiFi.softAP(_apName.c_str(), apPassword, 1, false, 4);
@@ -176,7 +178,6 @@ void WiFiManager::startAP() {
 
     setState(WifiStatus::AP_MODE);
     Serial.printf("[WIFI] AP started: %s\n", _apName.c_str());
-    Serial.printf("[WIFI] AP Password: %s\n", apPassword);
     Serial.printf("[WIFI] AP IP: %s\n", currentIP.toString().c_str());
     logger.infof("AP mode started: %s", _apName.c_str());
 }

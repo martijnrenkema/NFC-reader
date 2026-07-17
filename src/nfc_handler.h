@@ -32,7 +32,10 @@ public:
 
     // Scan history
     uint8_t getHistoryCount();
-    const ScanEntry* getHistoryEntry(uint8_t index);  // 0 = newest
+    // Copy history (newest first) into out; returns number of entries copied.
+    // Snapshot-based so the async webserver task never reads the ring buffer
+    // while the main loop is writing it.
+    uint8_t copyHistory(ScanEntry* out, uint8_t maxEntries);
     void clearHistory();
 
     // Callback for new tag scanned
@@ -47,10 +50,12 @@ private:
     unsigned long _lastCheckTime = 0;
     ScanCallback _callback = nullptr;
 
-    // Scan history ring buffer
+    // Scan history ring buffer (guarded: written by main loop, read/cleared
+    // by the async webserver task)
     ScanEntry _history[NFC_SCAN_HISTORY_SIZE];
     uint8_t _historyHead = 0;
     uint8_t _historyCount = 0;
+    portMUX_TYPE _historyMux = portMUX_INITIALIZER_UNLOCKED;
 
     // Debounce - prevent same tag being read twice quickly
     char _debounceUID[32] = {0};

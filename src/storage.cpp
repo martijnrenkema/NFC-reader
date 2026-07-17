@@ -114,6 +114,10 @@ const char* Storage::getOTAPassword() {
     return OTA_PASSWORD;
 }
 
+// The compile-time default is the fallback below, so it must itself satisfy the
+// WPA2 minimum - otherwise softAP() rejects it and AP mode never starts.
+static_assert(sizeof(WIFI_AP_PASSWORD) >= 9, "WIFI_AP_PASSWORD must be at least 8 characters (WPA2 minimum)");
+
 const char* Storage::getAPPassword() {
     // WiFi.softAP requires minimum 8 character password
     if (strlen(_settings.apPassword) >= 8) {
@@ -213,6 +217,8 @@ bool Storage::registerTag(const char* uid, const char* name) {
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     // Check if already registered (update name) - RAM lookup
     for (uint8_t i = 0; i < _tagCacheCount; i++) {
         if (strcmp(_tagCache[i].uid, uid) == 0) {
@@ -247,6 +253,8 @@ bool Storage::unregisterTag(const char* uid) {
     if (!uid || strlen(uid) == 0) {
         return false;
     }
+
+    std::lock_guard<std::mutex> lock(_tagMutex);
 
     // Find in cache
     int foundIndex = -1;
@@ -293,6 +301,8 @@ bool Storage::getTagName(const char* uid, char* buffer, size_t bufferSize) {
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     // Fast RAM lookup - no NVS access!
     for (uint8_t i = 0; i < _tagCacheCount; i++) {
         if (strcmp(_tagCache[i].uid, uid) == 0) {
@@ -309,6 +319,8 @@ uint8_t Storage::getRegisteredTagCount() {
 }
 
 bool Storage::getRegisteredTag(uint8_t index, TagEntry& entry) {
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     if (index >= _tagCacheCount) {
         return false;
     }
@@ -319,6 +331,8 @@ bool Storage::getRegisteredTag(uint8_t index, TagEntry& entry) {
 }
 
 void Storage::clearTagRegistry() {
+    std::lock_guard<std::mutex> lock(_tagMutex);
+
     // Clear cache
     _tagCacheCount = 0;
     memset(_tagCache, 0, sizeof(_tagCache));

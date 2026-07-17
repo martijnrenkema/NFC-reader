@@ -165,18 +165,24 @@ uint8_t NFCHandler::getHistoryCount() {
     return _historyCount;
 }
 
-const ScanEntry* NFCHandler::getHistoryEntry(uint8_t index) {
-    if (index >= _historyCount) return nullptr;
-
-    // Calculate position (newest first)
-    uint8_t pos = (_historyHead - 1 - index + NFC_SCAN_HISTORY_SIZE) % NFC_SCAN_HISTORY_SIZE;
-    return &_history[pos];
+uint8_t NFCHandler::copyHistory(ScanEntry* out, uint8_t maxEntries) {
+    portENTER_CRITICAL(&_historyMux);
+    uint8_t count = (_historyCount < maxEntries) ? _historyCount : maxEntries;
+    for (uint8_t i = 0; i < count; i++) {
+        // Newest first
+        uint8_t pos = (_historyHead - 1 - i + NFC_SCAN_HISTORY_SIZE) % NFC_SCAN_HISTORY_SIZE;
+        out[i] = _history[pos];
+    }
+    portEXIT_CRITICAL(&_historyMux);
+    return count;
 }
 
 void NFCHandler::clearHistory() {
+    portENTER_CRITICAL(&_historyMux);
     _historyCount = 0;
     _historyHead = 0;
     memset(_history, 0, sizeof(_history));
+    portEXIT_CRITICAL(&_historyMux);
     Serial.println("[NFC] History cleared");
 }
 
@@ -211,6 +217,7 @@ void NFCHandler::formatUID(uint8_t* uid, uint8_t uidLength, char* output, size_t
 
 void NFCHandler::addToHistory(const char* uid) {
     // Add to ring buffer
+    portENTER_CRITICAL(&_historyMux);
     ScanEntry& entry = _history[_historyHead];
     strncpy(entry.uid, uid, sizeof(entry.uid) - 1);
     entry.uid[sizeof(entry.uid) - 1] = '\0';
@@ -220,6 +227,7 @@ void NFCHandler::addToHistory(const char* uid) {
     if (_historyCount < NFC_SCAN_HISTORY_SIZE) {
         _historyCount++;
     }
+    portEXIT_CRITICAL(&_historyMux);
 }
 
 bool NFCHandler::isDebounced(const char* uid) {

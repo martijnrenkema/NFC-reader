@@ -32,7 +32,9 @@
 // WiFi Settings
 // ===========================================
 #define WIFI_AP_SSID_PREFIX     "NFC-READER-"
-#define WIFI_AP_PASSWORD        "nfc123"
+// WPA2 requires 8-63 characters; softAP() rejects anything shorter and the AP
+// would never start. Enforced by a static_assert in storage.cpp.
+#define WIFI_AP_PASSWORD        "nfcreader"
 #define WIFI_CONNECT_TIMEOUT    30000           // 30 seconds
 #define WIFI_RECONNECT_INTERVAL 60000           // 1 minute
 
@@ -86,7 +88,7 @@
 // ===========================================
 // Firmware Version
 // ===========================================
-#define FIRMWARE_VERSION        "1.8.0"
+#define FIRMWARE_VERSION        "1.9.0"
 
 // ===========================================
 // GitHub Repo (for updates)

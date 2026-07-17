@@ -15,7 +15,9 @@ void MQTTHandler::begin() {
     _mqttInstance = this;
 
     // Set socket timeouts for better responsiveness
-    _wifiClient.setTimeout(2000);  // 2 second TCP timeout
+    // NOTE: WiFiClient::setTimeout takes SECONDS on arduino-esp32 core 2.x
+    // (pinned via platformio.ini). This also bounds the blocking TCP connect.
+    _wifiClient.setTimeout(2);  // 2 second TCP timeout
 
     _mqttClient.setClient(_wifiClient);
     _mqttClient.setKeepAlive(NFC_MQTT_KEEPALIVE);
@@ -39,7 +41,7 @@ void MQTTHandler::processConnectStateMachine() {
         case MqttConnectState::IDLE:
             // Check if we should attempt connection
             if (!_mqttClient.connected() && _host.length() > 0 && wifiManager.isConnected()) {
-                if (now - _lastReconnect >= MQTT_RECONNECT_INTERVAL) {
+                if (now - _lastReconnect >= _reconnectInterval) {
                     _lastReconnect = now;
                     _connectStartTime = now;
 
@@ -67,6 +69,7 @@ void MQTTHandler::processConnectStateMachine() {
                 // TCP timeout
                 Serial.println("[MQTT] TCP connection timeout");
                 _wifiClient.stop();
+                _reconnectInterval = min(_reconnectInterval * 2, 60000UL);
                 _connectState = MqttConnectState::IDLE;
             }
             // Yield to allow background processing
@@ -95,11 +98,13 @@ void MQTTHandler::processConnectStateMachine() {
                     _publishState = MqttPublishState::STATE_LAST_UID;
                     _lastPublishStep = millis();
                 }
+                _reconnectInterval = MQTT_RECONNECT_INTERVAL;
                 _connectState = MqttConnectState::CONNECTED;
             } else {
                 Serial.printf("[MQTT] Connection failed, rc=%d\n", _mqttClient.state());
                 logger.errorf("MQTT connection failed (rc=%d)", _mqttClient.state());
                 _wifiClient.stop();
+                _reconnectInterval = min(_reconnectInterval * 2, 60000UL);
                 _connectState = MqttConnectState::IDLE;
             }
             break;
@@ -122,14 +127,39 @@ void MQTTHandler::processConnectStateMachine() {
 }
 
 void MQTTHandler::loop() {
+    // OTA upload (async task) requests suspension via a flag; the actual
+    // disconnect happens here in the main task because PubSubClient is not
+    // thread-safe.
+    if (_suspendRequested) {
+        if (!_suspended) {
+            _suspended = true;
+            disconnect();
+        }
+        return;
+    }
+    if (_suspended) {
+        _suspended = false;
+        _lastReconnect = millis();  // don't reconnect instantly after resume
+    }
+
     // Process non-blocking connection state machine
     processConnectStateMachine();
 
-    if (_mqttClient.connected()) {
+    // Refresh the cached flag here (main task) so other tasks can read the
+    // connection state via isConnected() without touching PubSubClient
+    _connected = _mqttClient.connected();
+
+    if (_connected) {
         _mqttClient.loop();
 
         // Process non-blocking publish state machine
         processPublishStateMachine();
+
+        // Handle discovery publish requests (e.g. tag registered via web UI)
+        if (_discoveryRequested && _publishState == MqttPublishState::IDLE) {
+            _discoveryRequested = false;
+            publishDiscovery();
+        }
 
         // Handle state publish requests
         // Note: volatile bool is sufficient - do NOT use noInterrupts() on ESP32-C3
@@ -238,8 +268,10 @@ void MQTTHandler::processPublishStateMachine() {
             break;
 
         case MqttPublishState::STATE_UPDATE: {
-            // Publish update-related states
-            const UpdateInfo& info = updateChecker.getInfo();
+            // Publish update-related states (snapshot: the check task may be
+            // writing the info struct concurrently)
+            UpdateInfo info;
+            updateChecker.getInfoSnapshot(info);
             _mqttClient.publish((base + "/update_available").c_str(), info.available ? "ON" : "OFF", true);
             _mqttClient.publish((base + "/latest_version").c_str(), info.latestVersion[0] ? info.latestVersion : "unknown", true);
             _mqttClient.publish((base + "/current_version").c_str(), info.currentVersion, true);
@@ -268,6 +300,7 @@ void MQTTHandler::connect(const char* host, uint16_t port, const char* user, con
     _mqttClient.setServer(host, port);
     _discoveryPublished = false;
     _lastReconnect = 0;
+    _reconnectInterval = MQTT_RECONNECT_INTERVAL;
 
     Serial.printf("[MQTT] Configured: %s:%d\n", host, port);
 }
@@ -277,10 +310,7 @@ void MQTTHandler::disconnect() {
         publishAvailability(false);
         _mqttClient.disconnect();
     }
-}
-
-bool MQTTHandler::isConnected() {
-    return _mqttClient.connected();
+    _connected = false;
 }
 
 void MQTTHandler::publishTagScanned(const char* uid) {

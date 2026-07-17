@@ -73,7 +73,9 @@ private:
     unsigned long _scanFlashTime = 0;
 
     // Night mode (RAM only - no flash writes!)
-    bool _nightMode = false;
+    // volatile: toggled from the async webserver task, applied in loop()
+    volatile bool _nightMode = false;
+    volatile bool _nightDirty = false;
 };
 
 extern LedController ledController;

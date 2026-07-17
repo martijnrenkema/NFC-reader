@@ -2,6 +2,7 @@
 #define STORAGE_H
 
 #include <Arduino.h>
+#include <mutex>
 #include "config.h"
 
 // Maximum number of tags in registry
@@ -79,8 +80,11 @@ private:
     bool _loaded = false;
 
     // RAM cache for tag registry (fast lookup, no NVS on every scan)
+    // Guarded: mutated by the async webserver task (register/unregister),
+    // read by the main loop (getTagName on every scan)
     TagEntry _tagCache[MAX_REGISTERED_TAGS];
     uint8_t _tagCacheCount = 0;
+    std::mutex _tagMutex;
     void loadTagCache();
     void saveTagToNVS(uint8_t index);
     void saveTagCountToNVS();

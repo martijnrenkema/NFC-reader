@@ -2,6 +2,7 @@
 #define LOGGER_H
 
 #include <Arduino.h>
+#include <mutex>
 
 // Log levels
 enum class LogLevel {
@@ -61,6 +62,9 @@ private:
     bool _dirty = false;
     bool _urgentSave = false;
     unsigned long _lastSave = 0;
+    // Entries are written by the main loop and read/cleared by the async
+    // webserver task (/api/logs)
+    std::mutex _mutex;
 
     void addEntry(LogLevel level, const char* message);
     const char* levelToString(LogLevel level);
