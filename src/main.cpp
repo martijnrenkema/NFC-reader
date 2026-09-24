@@ -63,7 +63,7 @@ void updateLedStatus() {
     // Apply LED state
     switch (newState) {
         case LedState::OTA:
-            ledController.blink(50);  // Very fast blink during OTA
+            ledController.showOTA();
             break;
         case LedState::AP_MODE:
             ledController.showAPMode();
@@ -75,13 +75,13 @@ void updateLedStatus() {
             ledController.showError();
             break;
         case LedState::NFC_ERROR:
-            ledController.blink(1000);  // Slow blink = NFC error
+            ledController.showNfcError();
             break;
         case LedState::TAG_PRESENT:
-            ledController.on();
+            ledController.showTagPresent();
             break;
         case LedState::IDLE:
-            ledController.pulse();
+            ledController.showConnected();
             break;
         default:
             break;
@@ -116,14 +116,25 @@ void onTagScanned(const char* uid) {
 // OTA handlers
 void onOTAStart() {
     otaInProgress = true;
-    updateLedStatus();
     logger.info("OTA update started");
+    logger.flush();
+    // A filesystem image overwrites the LittleFS partition: no log writes
+    // until the restart
+    logger.suspendFileWrites();
+    updateLedStatus();
 }
 
 void onOTAEnd() {
     otaInProgress = false;
     updateLedStatus();
     logger.info("OTA update completed");
+}
+
+void onOTAError() {
+    otaInProgress = false;
+    logger.resumeFileWrites();
+    logger.error("OTA update failed");
+    updateLedStatus();
 }
 
 void setup() {
@@ -172,13 +183,13 @@ void setup() {
                            settings.mqttUser, settings.mqttPassword);
     }
 
-    // Initialize NFC reader
+    // Initialize NFC reader. The callback is registered either way: the
+    // handler keeps retrying and can come up later.
+    nfcHandler.onTagScanned(onTagScanned);
     if (nfcHandler.begin()) {
         Serial.println("[MAIN] NFC reader initialized");
-        nfcHandler.onTagScanned(onTagScanned);
     } else {
-        Serial.println("[MAIN] NFC reader NOT detected - check wiring!");
-        logger.error("NFC reader not detected");
+        Serial.println("[MAIN] NFC reader NOT detected - check wiring! Retrying in the background.");
     }
 
     // Initialize web server
@@ -187,6 +198,7 @@ void setup() {
     // Setup OTA callbacks
     otaHandler.onStart(onOTAStart);
     otaHandler.onEnd(onOTAEnd);
+    otaHandler.onError(onOTAError);
 
     // Initialize update checker
     updateChecker.begin();

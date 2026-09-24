@@ -1,0 +1,76 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Check firmware version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=$(grep -oP '#define FIRMWARE_VERSION\s+"\K[^"]+' src/config.h)
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match FIRMWARE_VERSION $VERSION in src/config.h"
+            exit 1
+          fi
+
+      - name: Build firmware
+        run: pio run -e esp32c3_supermini
+
+      - name: Build filesystem image
+        run: pio run -e esp32c3_supermini -t buildfs
+
+      - name: Size report
+        run: |
+          ls -l .pio/build/esp32c3_supermini/firmware.bin .pio/build/esp32c3_supermini/littlefs.bin
+          ls -l data/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfc-reader-${{ github.sha }}
+          path: |
+            .pio/build/esp32c3_supermini/firmware.bin
+            .pio/build/esp32c3_supermini/littlefs.bin
+
+      # On a version tag: attach the binaries to the GitHub release (created
+      # if it doesn't exist yet). The device's auto-updater looks for exactly
+      # these file names.
+      - name: Attach binaries to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            .pio/build/esp32c3_supermini/firmware.bin \
+            .pio/build/esp32c3_supermini/littlefs.bin \
+            --clobber

@@ -10,6 +10,8 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <Update.h>
+#include <esp_timer.h>
+#include "diagnostics.h"
 
 #define FILESYSTEM LittleFS
 #define UPDATE_ERROR_STRING() Update.errorString()
@@ -19,6 +21,51 @@
 extern volatile bool otaInProgress;
 
 WebServer webServer;
+
+// Served when the LittleFS web files are missing or the filesystem is corrupt
+static const char RECOVERY_PAGE[] PROGMEM = R"html(<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NFC Reader - Recovery</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 16px;color:#09090B;background:#FAFAFA}
+h1{font-size:22px}input,button{font:inherit;margin:8px 0;display:block}button{padding:10px 18px;border:0;border-radius:8px;background:#2563EB;color:#fff}
+#s{color:#71717A}</style></head><body>
+<h1>NFC Reader</h1>
+<p>The web interface files are missing. Upload <b>littlefs.bin</b> (or spiffs.bin) from the latest
+<a href="https://github.com/)html" UPDATE_GITHUB_REPO R"html(/releases">GitHub release</a> to restore it.</p>
+<input type="file" id="f" accept=".bin"><button id="b">Upload web interface</button><p id="s"></p>
+<script>
+document.getElementById('b').onclick=function(){var f=document.getElementById('f').files[0],s=document.getElementById('s');
+if(!f){s.textContent='Choose a file first';return}var d=new FormData();d.append('file',f);var x=new XMLHttpRequest();
+x.open('POST','/api/update/filesystem');x.upload.onprogress=function(e){s.textContent='Uploading '+Math.round(e.loaded/e.total*100)+'%'};
+x.onload=function(){s.textContent=x.status==200?'Done, restarting...':'Failed: '+x.responseText;if(x.status==200)setTimeout(function(){location.reload()},8000)};
+x.onerror=function(){s.textContent='Connection lost'};x.send(d)};
+</script></body></html>)html";
+
+// Result of a manual upload, stored per request in _tempObject (freed by the
+// request destructor) so concurrent uploads can't clobber each other's result
+enum UploadResult : uint8_t { UPLOAD_PENDING = 0, UPLOAD_OK, UPLOAD_FAILED, UPLOAD_REJECTED };
+
+static void setUploadResult(AsyncWebServerRequest* request, UploadResult result) {
+    if (!request->_tempObject) {
+        request->_tempObject = malloc(sizeof(uint8_t));
+    }
+    if (request->_tempObject) {
+        *(uint8_t*)request->_tempObject = result;
+    }
+}
+
+// UIDs are formatted by nfc_handler as colon separated hex bytes
+// ("5C:9E:35:4A"); reject anything else before it ends up in the registry,
+// MQTT topics or the web UI
+static bool isValidUid(const String& uid) {
+    if (uid.length() < 2 || uid.length() > 23) return false;
+    for (size_t i = 0; i < uid.length(); i++) {
+        char c = uid[i];
+        bool hex = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F');
+        if (!hex && c != ':') return false;
+    }
+    return true;
+}
 
 void WebServer::begin() {
     if (_server != nullptr) {
@@ -97,9 +144,13 @@ void WebServer::loop() {
     } else if (_pendingReset) {
         _pendingReset = false;
         storage.reset();
+        logger.info("Factory reset");
+        logger.flush();
         ESP.restart();
     } else if (_pendingRestart) {
         _pendingRestart = false;
+        logger.info("Restart requested");
+        logger.flush();  // No-op while a filesystem update suspended writes
         ESP.restart();
     }
 
@@ -136,6 +187,12 @@ void WebServer::setupRoutes() {
 
     _server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
         handleReset(request);
+    });
+
+    _server->on("/api/restart", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Restarting...\"}");
+        _pendingRestart = true;
+        _pendingActionTime = millis();
     });
 
     _server->on("/api/passwords", HTTP_POST, [this](AsyncWebServerRequest* request) {
@@ -208,6 +265,7 @@ void WebServer::setupRoutes() {
             String name = request->getParam("name", true)->value();
             if (name.length() > 0 && name.length() < 32) {
                 storage.setDeviceName(name.c_str());
+                mqttHandler.requestDiscoveryPublish();  // HA picks up the new name
                 request->send(200, "application/json", "{\"success\":true,\"message\":\"Device name saved\"}");
             } else {
                 request->send(400, "application/json", "{\"error\":\"Name must be 1-31 characters\"}");
@@ -217,143 +275,18 @@ void WebServer::setupRoutes() {
         }
     });
 
-    // OTA Update - Firmware
+    // OTA Update - Firmware / Filesystem (manual upload from the web UI)
     _server->on("/api/update/firmware", HTTP_POST,
-        [this](AsyncWebServerRequest* request) {
-            bool success = !Update.hasError();
-            AsyncWebServerResponse* response = request->beginResponse(
-                success ? 200 : 500,
-                "text/plain",
-                success ? "OK" : "Update failed"
-            );
-            response->addHeader("Connection", "close");
-            request->send(response);
-            if (success) {
-                _pendingRestart = true;
-                _pendingActionTime = millis();
-            }
-        },
-        [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
-            if (!index) {
-                Serial.printf("[OTA] Firmware update start: %s\n", filename.c_str());
-                if (Update.isRunning()) {
-                    Update.abort();  // clean up a previously aborted upload
-                }
-                otaInProgress = true;
-                // Flag only - the main loop suspends MQTT and updates the
-                // LED; PubSubClient/RMT must not be touched from this task
-                mqttHandler.requestSuspend();
-
-                // The client can vanish mid-upload; without this the device
-                // stays stuck in OTA state (MQTT off, LED blinking) forever
-                request->onDisconnect([]() {
-                    if (Update.isRunning()) {
-                        Update.abort();
-                        Serial.println("[OTA] Firmware upload aborted (client disconnected)");
-                        otaInProgress = false;
-                        mqttHandler.resume();
-                    }
-                });
-
-                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-                    Serial.printf("[OTA] Update.begin failed: %s\n", UPDATE_ERROR_STRING());
-                    Update.printError(Serial);
-                    otaInProgress = false;
-                    mqttHandler.resume();
-                    return;
-                }
-                Serial.println("[OTA] Update.begin success");
-            }
-
-            if (Update.hasError()) return;
-
-            if (len) {
-                if (Update.write(data, len) != len) {
-                    Serial.printf("[OTA] Update.write failed: %s\n", UPDATE_ERROR_STRING());
-                    otaInProgress = false;
-                    mqttHandler.resume();
-                    return;
-                }
-            }
-
-            if (final) {
-                if (Update.end(true)) {
-                    Serial.printf("[OTA] Firmware update success: %u bytes\n", index + len);
-                } else {
-                    Serial.printf("[OTA] Firmware update failed: %s\n", UPDATE_ERROR_STRING());
-                    Update.printError(Serial);
-                    otaInProgress = false;
-                    mqttHandler.resume();
-                }
-            }
+        [this](AsyncWebServerRequest* request) { finishUpload(request); },
+        [this](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
+            handleUploadChunk(request, filename, index, data, len, final, U_FLASH);
         }
     );
 
-    // OTA Update - Filesystem
     _server->on("/api/update/filesystem", HTTP_POST,
-        [this](AsyncWebServerRequest* request) {
-            bool success = !Update.hasError();
-            AsyncWebServerResponse* response = request->beginResponse(
-                success ? 200 : 500,
-                "text/plain",
-                success ? "OK" : "Update failed"
-            );
-            response->addHeader("Connection", "close");
-            request->send(response);
-            if (success) {
-                _pendingRestart = true;
-                _pendingActionTime = millis();
-            }
-        },
-        [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
-            if (!index) {
-                Serial.printf("[OTA] Filesystem update start: %s\n", filename.c_str());
-                if (Update.isRunning()) {
-                    Update.abort();  // clean up a previously aborted upload
-                }
-                otaInProgress = true;
-                mqttHandler.requestSuspend();
-
-                request->onDisconnect([]() {
-                    if (Update.isRunning()) {
-                        Update.abort();
-                        Serial.println("[OTA] Filesystem upload aborted (client disconnected)");
-                        otaInProgress = false;
-                        mqttHandler.resume();
-                    }
-                });
-
-                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
-                    Serial.printf("[OTA] Update.begin failed: %s\n", UPDATE_ERROR_STRING());
-                    Update.printError(Serial);
-                    otaInProgress = false;
-                    mqttHandler.resume();
-                    return;
-                }
-                Serial.println("[OTA] Update.begin success");
-            }
-
-            if (Update.hasError()) return;
-
-            if (len) {
-                if (Update.write(data, len) != len) {
-                    Serial.printf("[OTA] Update.write failed: %s\n", UPDATE_ERROR_STRING());
-                    otaInProgress = false;
-                    mqttHandler.resume();
-                    return;
-                }
-            }
-
-            if (final) {
-                if (Update.end(true)) {
-                    Serial.printf("[OTA] Filesystem update success: %u bytes\n", index + len);
-                } else {
-                    Serial.printf("[OTA] Filesystem update failed: %s\n", UPDATE_ERROR_STRING());
-                    Update.printError(Serial);
-                    otaInProgress = false;
-                    mqttHandler.resume();
-                }
-            }
+        [this](AsyncWebServerRequest* request) { finishUpload(request); },
+        [this](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
+            handleUploadChunk(request, filename, index, data, len, final, U_SPIFFS);
         }
     );
 
@@ -390,16 +323,29 @@ void WebServer::setupRoutes() {
 
         String uid = request->getParam("uid", true)->value();
         String name = request->getParam("name", true)->value();
+        uid.toUpperCase();
 
-        if (uid.length() == 0 || name.length() == 0) {
-            request->send(400, "application/json", "{\"error\":\"UID and name cannot be empty\"}");
+        if (!isValidUid(uid)) {
+            request->send(400, "application/json", "{\"error\":\"Invalid UID (expected hex bytes like 5C:9E:35:4A)\"}");
+            return;
+        }
+        if (name.length() == 0 || name.length() > 31) {
+            request->send(400, "application/json", "{\"error\":\"Name must be 1-31 characters\"}");
             return;
         }
 
+        // Renaming an existing tag: its old trigger must go
+        char oldName[32] = {0};
+        bool existed = storage.getTagName(uid.c_str(), oldName, sizeof(oldName));
+
         if (storage.registerTag(uid.c_str(), name.c_str())) {
-            // Republish MQTT discovery to include the new tag trigger.
-            // Flag only - the actual publish happens in the main loop
-            // (PubSubClient is not thread-safe).
+            char newName[32] = {0};
+            storage.getTagName(uid.c_str(), newName, sizeof(newName));
+            if (existed && strcmp(oldName, newName) != 0) {
+                mqttHandler.requestTriggerRemoval(oldName);
+            }
+            // Flags only - discovery (named triggers + event types) is
+            // published from the main loop (PubSubClient is not thread-safe)
             mqttHandler.requestDiscoveryPublish();
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Tag registered\"}");
         } else {
@@ -415,8 +361,13 @@ void WebServer::setupRoutes() {
         }
 
         String uid = request->getParam("uid")->value();
+        char name[32] = {0};
+        storage.getTagName(uid.c_str(), name, sizeof(name));
 
         if (storage.unregisterTag(uid.c_str())) {
+            // Remove the retained HA trigger, otherwise it lingers forever
+            if (name[0]) mqttHandler.requestTriggerRemoval(name);
+            mqttHandler.requestDiscoveryPublish();
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Tag unregistered\"}");
         } else {
             request->send(404, "application/json", "{\"error\":\"Tag not found\"}");
@@ -431,6 +382,11 @@ void WebServer::setupRoutes() {
         }
 
         String uid = request->getParam("uid", true)->value();
+        uid.toUpperCase();
+        if (!isValidUid(uid)) {
+            request->send(400, "application/json", "{\"error\":\"Invalid UID\"}");
+            return;
+        }
 
         if (mqttHandler.isConnected()) {
             // Deferred to loop(): PubSubClient may only be used from the
@@ -459,20 +415,20 @@ void WebServer::setupRoutes() {
         request->send(200, "text/plain", "Microsoft Connect Test");
     });
 
-    // Captive portal redirect
+    // Missing web files (e.g. after a failed filesystem update) or captive
+    // portal redirect
     _server->onNotFound([](AsyncWebServerRequest* request) {
-        if (request->method() == HTTP_GET && wifiManager.isAPMode()) {
-            String url = request->url();
-            if (url == "/" || url == "/index.html") {
-                request->send(200, "text/html",
-                    "<html><body style='font-family:sans-serif;text-align:center;padding:50px;'>"
-                    "<h1>NFC Reader</h1>"
-                    "<p>Web interface files missing!</p>"
-                    "<p>Please flash the filesystem binary to the device.</p>"
-                    "</body></html>");
-            } else {
-                request->redirect("http://192.168.4.1/");
-            }
+        if (request->method() != HTTP_GET) {
+            request->send(404);
+            return;
+        }
+        String url = request->url();
+        if (url == "/" || url == "/index.html") {
+            // serveStatic found no index.html(.gz): serve a built-in page so
+            // the web interface can be restored without USB
+            request->send_P(200, "text/html", RECOVERY_PAGE);
+        } else if (wifiManager.isAPMode()) {
+            request->redirect("http://192.168.4.1/");
         } else {
             request->send(404);
         }
@@ -510,6 +466,13 @@ void WebServer::handleStatus(AsyncWebServerRequest* request) {
     doc["device"]["platform"] = "ESP32-C3";
     doc["device"]["night_mode"] = ledController.isNightMode();
 
+    // Diagnostics
+    doc["system"]["uptime"] = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+    doc["system"]["free_heap"] = ESP.getFreeHeap();
+    doc["system"]["min_free_heap"] = ESP.getMinFreeHeap();
+    doc["system"]["reset_reason"] = resetReasonString();
+    doc["system"]["nfc_reconnects"] = nfcHandler.getReconnectCount();
+
     String response;
     size_t jsonSize = serializeJson(doc, response);
     if (jsonSize == 0) {
@@ -528,6 +491,17 @@ void WebServer::handleSaveWifi(AsyncWebServerRequest* request) {
 
     String ssid = request->getParam("ssid", true)->value();
     String password = request->getParam("password", true)->value();
+
+    // Reject instead of silently truncating: a cut-off password can never
+    // connect and the device falls back to AP mode
+    if (ssid.length() == 0 || ssid.length() > 32) {
+        request->send(400, "application/json", "{\"error\":\"SSID must be 1-32 characters\"}");
+        return;
+    }
+    if (password.length() > 0 && (password.length() < 8 || password.length() > 63)) {
+        request->send(400, "application/json", "{\"error\":\"WiFi password must be 8-63 characters (or empty for an open network)\"}");
+        return;
+    }
 
     storage.setWiFi(ssid.c_str(), password.c_str());
 
@@ -565,6 +539,19 @@ void WebServer::handleSaveMqtt(AsyncWebServerRequest* request) {
         password = request->getParam("password", true)->value();
     }
 
+    if (host.length() == 0 || host.length() > 63) {
+        request->send(400, "application/json", "{\"error\":\"Broker host must be 1-63 characters\"}");
+        return;
+    }
+    if (user.length() > 31) {
+        request->send(400, "application/json", "{\"error\":\"MQTT username can be at most 31 characters\"}");
+        return;
+    }
+    if (password.length() > 63) {
+        request->send(400, "application/json", "{\"error\":\"MQTT password can be at most 63 characters\"}");
+        return;
+    }
+
     storage.setMQTT(host.c_str(), port, user.c_str(), password.c_str());
 
     request->send(200, "application/json", "{\"success\":true,\"message\":\"MQTT saved, connecting...\"}");
@@ -587,35 +574,27 @@ void WebServer::handleReset(AsyncWebServerRequest* request) {
 }
 
 void WebServer::handleSavePasswords(AsyncWebServerRequest* request) {
-    bool changed = false;
+    String otaPass = request->hasParam("ota_password", true) ? request->getParam("ota_password", true)->value() : "";
+    String apPass = request->hasParam("ap_password", true) ? request->getParam("ap_password", true)->value() : "";
 
-    if (request->hasParam("ota_password", true)) {
-        String otaPass = request->getParam("ota_password", true)->value();
-        if (otaPass.length() >= 8) {
-            storage.setOTAPassword(otaPass.c_str());
-            changed = true;
-        } else if (otaPass.length() > 0) {
-            request->send(400, "application/json", "{\"error\":\"OTA password must be at least 8 characters\"}");
-            return;
-        }
+    // Validate both before saving either. Longer passwords used to be cut
+    // off silently at 31 characters, locking users out of the fallback AP.
+    if (otaPass.length() > 0 && (otaPass.length() < 8 || otaPass.length() > 63)) {
+        request->send(400, "application/json", "{\"error\":\"OTA password must be 8-63 characters\"}");
+        return;
     }
-
-    if (request->hasParam("ap_password", true)) {
-        String apPass = request->getParam("ap_password", true)->value();
-        if (apPass.length() >= 8) {
-            storage.setAPPassword(apPass.c_str());
-            changed = true;
-        } else if (apPass.length() > 0) {
-            request->send(400, "application/json", "{\"error\":\"AP password must be at least 8 characters\"}");
-            return;
-        }
+    if (apPass.length() > 0 && (apPass.length() < 8 || apPass.length() > 63)) {
+        request->send(400, "application/json", "{\"error\":\"Access point password must be 8-63 characters\"}");
+        return;
     }
-
-    if (changed) {
-        request->send(200, "application/json", "{\"success\":true,\"message\":\"Passwords saved. Restart device to apply.\"}");
-    } else {
+    if (otaPass.length() == 0 && apPass.length() == 0) {
         request->send(400, "application/json", "{\"error\":\"No valid passwords provided\"}");
+        return;
     }
+
+    if (otaPass.length() > 0) storage.setOTAPassword(otaPass.c_str());
+    if (apPass.length() > 0) storage.setAPPassword(apPass.c_str());
+    request->send(200, "application/json", "{\"success\":true,\"message\":\"Passwords saved. Restart device to apply.\"}");
 }
 
 void WebServer::handleGetPasswords(AsyncWebServerRequest* request) {
@@ -707,4 +686,114 @@ void WebServer::handleUpdateInstall(AsyncWebServerRequest* request) {
     // Start OTA update
     updateChecker.startOTAUpdate();
     request->send(200, "application/json", "{\"success\":true,\"message\":\"Update started\"}");
+}
+
+void WebServer::handleUploadChunk(AsyncWebServerRequest* request, const String& filename, size_t index,
+                                  uint8_t* data, size_t len, bool final, int command) {
+    const char* label = (command == U_FLASH) ? "Firmware" : "Filesystem";
+
+    if (!index) {
+        // One update at a time: a GitHub install, ArduinoOTA or another
+        // upload may already be writing flash. (Aborting it here used to
+        // corrupt the running update.)
+        if (otaInProgress || Update.isRunning()) {
+            Serial.printf("[OTA] %s upload rejected: another update is running\n", label);
+            setUploadResult(request, UPLOAD_REJECTED);
+            return;
+        }
+        setUploadResult(request, UPLOAD_PENDING);
+        Serial.printf("[OTA] %s update start: %s\n", label, filename.c_str());
+        logger.infof("%s upload started", label);
+
+        otaInProgress = true;
+        // Flag only - the main loop suspends MQTT and updates the LED;
+        // PubSubClient/RMT must not be touched from this task
+        mqttHandler.requestSuspend();
+
+        if (command == U_SPIFFS) {
+            // The image overwrites the mounted LittleFS partition: stop log
+            // writes (waits for a running save) and unmount first, otherwise
+            // a concurrent write corrupts the new image
+            logger.flush();
+            logger.suspendFileWrites();
+            FILESYSTEM.end();
+        }
+
+        // The client can vanish mid-upload; without this the device stays
+        // stuck in OTA state (MQTT off, LED blinking) forever
+        request->onDisconnect([this, command]() {
+            if (Update.isRunning()) {
+                Update.abort();
+                Serial.println("[OTA] Upload aborted (client disconnected)");
+                uploadFailed(command);
+            }
+        });
+
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN, command)) {
+            Serial.printf("[OTA] Update.begin failed: %s\n", UPDATE_ERROR_STRING());
+            setUploadResult(request, UPLOAD_FAILED);
+            uploadFailed(command);
+            return;
+        }
+    }
+
+    // Rejected or already failed: ignore the rest of the body
+    if (!request->_tempObject || *(uint8_t*)request->_tempObject != UPLOAD_PENDING) return;
+    if (!Update.isRunning()) return;
+
+    if (len && Update.write(data, len) != len) {
+        Serial.printf("[OTA] Update.write failed: %s\n", UPDATE_ERROR_STRING());
+        Update.abort();
+        setUploadResult(request, UPLOAD_FAILED);
+        uploadFailed(command);
+        return;
+    }
+
+    if (final) {
+        if (Update.end(true)) {
+            Serial.printf("[OTA] %s update success: %u bytes\n", label, index + len);
+            setUploadResult(request, UPLOAD_OK);
+        } else {
+            Serial.printf("[OTA] %s update failed: %s\n", label, UPDATE_ERROR_STRING());
+            setUploadResult(request, UPLOAD_FAILED);
+            uploadFailed(command);
+        }
+    }
+}
+
+void WebServer::uploadFailed(int command) {
+    otaInProgress = false;
+    mqttHandler.resume();
+    if (command == U_SPIFFS) {
+        // Remount (no format): if the partition was partly overwritten the
+        // mount fails and the recovery page takes over
+        FILESYSTEM.begin(false);
+        logger.resumeFileWrites();
+    }
+    logger.warn("Manual update failed");
+}
+
+void WebServer::finishUpload(AsyncWebServerRequest* request) {
+    // No file part at all (e.g. an empty POST) counts as failed, so it can't
+    // trigger a restart
+    uint8_t result = request->_tempObject ? *(uint8_t*)request->_tempObject : (uint8_t)UPLOAD_FAILED;
+
+    int code = 500;
+    const char* msg = "Update failed";
+    if (result == UPLOAD_OK) {
+        code = 200;
+        msg = "OK";
+    } else if (result == UPLOAD_REJECTED) {
+        code = 409;
+        msg = "Another update is in progress";
+    }
+
+    AsyncWebServerResponse* response = request->beginResponse(code, "text/plain", msg);
+    response->addHeader("Connection", "close");
+    request->send(response);
+
+    if (result == UPLOAD_OK) {
+        _pendingRestart = true;
+        _pendingActionTime = millis();
+    }
 }

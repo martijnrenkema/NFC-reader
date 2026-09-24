@@ -13,12 +13,14 @@ public:
     void onProgress(OTACallback callback);
     void onStart(void (*callback)());
     void onEnd(void (*callback)());
+    void onError(void (*callback)());
 
 private:
     bool _started = false;
     OTACallback _progressCallback = nullptr;
     void (*_startCallback)() = nullptr;
     void (*_endCallback)() = nullptr;
+    void (*_errorCallback)() = nullptr;
 };
 
 extern OTAHandler otaHandler;

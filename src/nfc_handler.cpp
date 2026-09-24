@@ -50,6 +50,7 @@ bool NFCHandler::begin() {
         Serial.println("[NFC] PN532 not found - check wiring!");
         logger.error("PN532 not found");
         _connected = false;
+        _lastReconnectAttempt = millis();
         return false;
     }
 
@@ -79,9 +80,38 @@ bool NFCHandler::begin() {
 }
 
 void NFCHandler::loop() {
-    if (!_connected) return;
-
     unsigned long now = millis();
+
+    if (!_connected) {
+        // Reader missing or dropped off the bus: retry with backoff instead of
+        // staying dead until the next reboot
+        if (nfc && now - _lastReconnectAttempt >= _reconnectInterval) {
+            _lastReconnectAttempt = now;
+            tryReconnect();
+        }
+        return;
+    }
+
+    // Periodic health check while idle. readPassiveTargetID() returns false
+    // both for "no tag" and for a dead reader, so it can't tell them apart.
+    if (!_tagPresent && now - _lastHealthCheck >= NFC_HEALTH_CHECK_MS) {
+        _lastHealthCheck = now;
+        if (nfc->getFirmwareVersion()) {
+            _healthFailures = 0;
+        } else if (++_healthFailures < 3) {
+            // Re-check in 5s instead of waiting another minute
+            _lastHealthCheck = now - NFC_HEALTH_CHECK_MS + 5000;
+        } else {
+            _connected = false;
+            _tagPresent = false;
+            _healthFailures = 0;
+            _reconnectInterval = NFC_RECONNECT_MIN_MS;
+            _lastReconnectAttempt = now;
+            logger.error("PN532 stopped responding");
+            return;
+        }
+        yield();
+    }
 
     // Check for tags at configured interval
     if (now - _lastCheckTime < NFC_CHECK_INTERVAL_MS) return;
@@ -109,8 +139,13 @@ void NFCHandler::loop() {
         char uidStr[32];
         formatUID(uid, uidLength, uidStr, sizeof(uidStr));
 
-        // Check debounce
-        if (!isDebounced(uidStr)) {
+        // Check debounce. A tag resting on the reader keeps refreshing the
+        // window, so it fires once per placement instead of every
+        // NFC_DEBOUNCE_MS. A single missed read while it rests (<3s) doesn't
+        // re-trigger either.
+        if (isDebounced(uidStr)) {
+            _debounceTime = now;
+        } else {
             // New tag detected!
             strncpy(_lastUID, uidStr, sizeof(_lastUID) - 1);
             _lastScanTime = now;
@@ -238,6 +273,21 @@ bool NFCHandler::isDebounced(const char* uid) {
         }
     }
     return false;
+}
+
+void NFCHandler::tryReconnect() {
+    // Lightweight re-init (no RSTO pulse with its blocking delays)
+    uint32_t versiondata = nfc->getFirmwareVersion();
+    if (!versiondata || !nfc->SAMConfig()) {
+        _reconnectInterval = min(_reconnectInterval * 2, (unsigned long)NFC_RECONNECT_MAX_MS);
+        return;
+    }
+    _connected = true;
+    _healthFailures = 0;
+    _lastHealthCheck = millis();
+    _reconnectInterval = NFC_RECONNECT_MIN_MS;
+    _reconnectCount++;
+    logger.infof("PN532 reconnected (PN5%02X)", (versiondata >> 24) & 0xFF);
 }
 
 void NFCHandler::runDiagnostics() {

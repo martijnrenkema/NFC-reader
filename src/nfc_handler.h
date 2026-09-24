@@ -23,6 +23,7 @@ public:
 
     // Status
     bool isConnected();
+    uint16_t getReconnectCount() const { return _reconnectCount; }
     bool isTagPresent();
 
     // Last scanned tag info
@@ -49,6 +50,14 @@ private:
     unsigned long _lastScanTime = 0;
     unsigned long _lastCheckTime = 0;
     ScanCallback _callback = nullptr;
+
+    // Self-healing: health check while idle, reconnect with backoff
+    unsigned long _lastHealthCheck = 0;
+    uint8_t _healthFailures = 0;
+    unsigned long _lastReconnectAttempt = 0;
+    unsigned long _reconnectInterval = NFC_RECONNECT_MIN_MS;
+    uint16_t _reconnectCount = 0;
+    void tryReconnect();
 
     // Scan history ring buffer (guarded: written by main loop, read/cleared
     // by the async webserver task)

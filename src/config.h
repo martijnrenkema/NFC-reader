@@ -27,6 +27,9 @@
 #define NFC_DEBOUNCE_MS         3000    // Same tag not read twice within this time (3 sec)
 #define NFC_SCAN_HISTORY_SIZE   10      // Number of scans to keep in history
 #define NFC_CHECK_INTERVAL_MS   750     // How often to check for tags (750ms - less blocking)
+#define NFC_HEALTH_CHECK_MS     60000   // Ping the PN532 once a minute while idle
+#define NFC_RECONNECT_MIN_MS    10000   // First reconnect attempt after 10s...
+#define NFC_RECONNECT_MAX_MS    300000  // ...backing off to every 5 minutes
 
 // ===========================================
 // WiFi Settings
@@ -93,7 +96,7 @@
 // ===========================================
 // Firmware Version
 // ===========================================
-#define FIRMWARE_VERSION        "1.9.1"
+#define FIRMWARE_VERSION        "1.10.0"
 
 // ===========================================
 // GitHub Repo (for updates)

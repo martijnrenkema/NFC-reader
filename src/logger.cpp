@@ -11,8 +11,10 @@ Logger logger;
 // Log retention: 7 days in seconds
 #define LOG_RETENTION_SECONDS (7 * 24 * 60 * 60)
 
-// Save interval: 60 seconds (reduce flash wear)
-#define LOG_SAVE_INTERVAL_MS 60000
+// Save intervals (flash wear): the whole ~10 KB file is rewritten on every
+// save, so a broker that stays down must not trigger a rewrite per minute
+#define LOG_SAVE_INTERVAL_MS        900000   // Routine save: every 15 minutes
+#define LOG_URGENT_MIN_INTERVAL_MS  300000   // WARN/ERROR: at most every 5 minutes
 
 // File header for version checking
 struct LogFileHeader {
@@ -123,14 +125,37 @@ void Logger::saveToFile() {
 }
 
 void Logger::save() {
-    if (_dirty && (_urgentSave || (millis() - _lastSave >= LOG_SAVE_INTERVAL_MS))) {
-        saveToFile();
-        _urgentSave = false;
+    unsigned long sinceSave = millis() - _lastSave;
+    // The first urgent save after boot is immediate, so errors from a crash
+    // loop still reach flash
+    bool urgentDue = _urgentSave && (_lastSave == 0 || sinceSave >= LOG_URGENT_MIN_INTERVAL_MS);
+    bool due = urgentDue ||
+               sinceSave >= LOG_SAVE_INTERVAL_MS;
+    if (_dirty && due) {
+        flush();
     }
 }
 
+void Logger::flush() {
+    if (!_dirty || _suspended) return;
+    std::lock_guard<std::mutex> fileLock(_fileMutex);
+    if (_suspended) return;  // suspend() won the race
+    saveToFile();
+    _urgentSave = false;
+}
+
 bool Logger::needsUrgentSave() const {
-    return _urgentSave;
+    return _urgentSave && (_lastSave == 0 || millis() - _lastSave >= LOG_URGENT_MIN_INTERVAL_MS);
+}
+
+void Logger::suspendFileWrites() {
+    _suspended = true;
+    // Wait for a save that is already in progress to finish
+    std::lock_guard<std::mutex> fileLock(_fileMutex);
+}
+
+void Logger::resumeFileWrites() {
+    _suspended = false;
 }
 
 void Logger::info(const char* message) {
@@ -230,7 +255,10 @@ void Logger::clear() {
     }
 
     // Delete log file
-    FILESYSTEM.remove(LOG_FILE_PATH);
+    if (!_suspended) {
+        std::lock_guard<std::mutex> fileLock(_fileMutex);
+        FILESYSTEM.remove(LOG_FILE_PATH);
+    }
 
     info("Log cleared");
 }

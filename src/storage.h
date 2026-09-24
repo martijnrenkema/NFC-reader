@@ -30,8 +30,8 @@ struct NFCSettings {
     char deviceName[32];
 
     // Security - configurable passwords
-    char otaPassword[32];
-    char apPassword[32];
+    char otaPassword[64];   // 8-63 characters (WPA2 limit for the AP password)
+    char apPassword[64];
 };
 
 class Storage {

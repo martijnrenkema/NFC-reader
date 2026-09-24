@@ -50,6 +50,12 @@ private:
     void handleUpdateCheck(AsyncWebServerRequest* request);
     void handleUpdateStatus(AsyncWebServerRequest* request);
     void handleUpdateInstall(AsyncWebServerRequest* request);
+
+    // Manual firmware/filesystem upload (runs in the async webserver task)
+    void handleUploadChunk(AsyncWebServerRequest* request, const String& filename, size_t index,
+                           uint8_t* data, size_t len, bool final, int command);
+    void finishUpload(AsyncWebServerRequest* request);
+    void uploadFailed(int command);
 };
 
 extern WebServer webServer;

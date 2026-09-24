@@ -7,7 +7,12 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Update.h>
+#include <LittleFS.h>
 #include <stdarg.h>
+
+// Set while any firmware/filesystem update runs (main.cpp); the web upload
+// handlers refuse to start while it is set
+extern volatile bool otaInProgress;
 
 UpdateChecker updateChecker;
 
@@ -399,6 +404,14 @@ bool UpdateChecker::downloadAndInstall(const char* url, int updateType, const ch
 }
 
 void UpdateChecker::performOTAUpdate() {
+    // A manual web upload may have started after the install was requested
+    if (otaInProgress) {
+        setErrorf("Another update is in progress");
+        _state = UpdateCheckState::ERROR;
+        if (_stateCallback) _stateCallback();
+        return;
+    }
+    otaInProgress = true;
     _state = UpdateCheckState::DOWNLOADING;
     {
         std::lock_guard<std::mutex> lock(_infoMutex);
@@ -419,6 +432,7 @@ void UpdateChecker::performOTAUpdate() {
     if (!downloadAndInstall(info.downloadUrl, U_FLASH, "Firmware")) {
         // ERROR persists so the UI can see what went wrong; MQTT reconnects
         // automatically via its state machine
+        otaInProgress = false;
         _state = UpdateCheckState::ERROR;
         if (_stateCallback) _stateCallback();
         return;
@@ -429,6 +443,13 @@ void UpdateChecker::performOTAUpdate() {
         _info.downloadProgress = 0;
         if (_stateCallback) _stateCallback();
 
+        // The image overwrites the mounted LittleFS partition: stop log
+        // writes and unmount first, or a concurrent write corrupts the new
+        // image and the next boot formats it
+        logger.flush();
+        logger.suspendFileWrites();
+        LittleFS.end();
+
         if (!downloadAndInstall(info.spiffsUrl, U_SPIFFS, "Filesystem")) {
             // Filesystem failed, but firmware was already installed
             // Log warning but still restart to apply firmware
@@ -437,6 +458,7 @@ void UpdateChecker::performOTAUpdate() {
     }
 
     logger.info("OTA update complete! Restarting...");
+    logger.flush();  // No-op when file writes are suspended
     _info.downloadProgress = 100;
     if (_stateCallback) _stateCallback();
 

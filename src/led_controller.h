@@ -43,14 +43,18 @@ public:
     void showConnecting(); // Fast blink while connecting (light blue)
     void showConnected();  // Soft pulse when connected (green)
     void showError();      // Fast blink on error (red)
+    void showTagPresent(); // Solid cyan while a tag is on the reader
+    void showNfcError();   // Slow blink when the PN532 is missing (red)
+    void showOTA();        // Fast blink during updates (purple)
 
     // Night mode (LED off for bedroom use)
     void setNightMode(bool enabled);
     bool isNightMode() { return _nightMode; }
 
 private:
-    // RGB LED helper
+    // RGB LED helpers
     void setRGB(uint8_t r, uint8_t g, uint8_t b);
+    void show(uint8_t r, uint8_t g, uint8_t b, LedMode mode);
 
     LedMode _mode = LedMode::OFF;
     LedMode _previousMode = LedMode::OFF;  // To restore after scan flash

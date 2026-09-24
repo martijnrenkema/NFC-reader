@@ -18,22 +18,15 @@ enum class MqttConnectState {
 // Non-blocking publish states
 enum class MqttPublishState {
     IDLE,
-    // Discovery states
-    DISC_LAST_UID,
-    DISC_TAG_PRESENT,
-    DISC_WIFI_SIGNAL,
-    DISC_NIGHT_MODE,
-    DISC_TAG_SCANNED_TRIGGER,
-    DISC_UPDATE_AVAILABLE,
-    DISC_LATEST_VERSION,
-    DISC_CURRENT_VERSION,
-    DISC_DONE,
+    DISCOVERY,          // One entity per step (see publishDiscoveryStep)
+    DISCOVERY_TAGS,     // One named tag trigger per step
     // State publish states
     STATE_LAST_UID,
     STATE_TAG_PRESENT,
     STATE_WIFI,
     STATE_NIGHT_MODE,
     STATE_UPDATE,
+    STATE_DIAGNOSTICS,
     STATE_DONE
 };
 
@@ -78,6 +71,10 @@ public:
     void requestDiscoveryPublish() {
         _discoveryRequested = true;
     }
+
+    // Queue removal of a named tag's retained HA trigger (tag deleted or
+    // renamed). Safe to call from any context; published from loop().
+    void requestTriggerRemoval(const char* name);
 
     // Suspend/resume MQTT (safe to call from any context).
     // PubSubClient is NOT thread-safe: the OTA upload handlers run in the
@@ -125,15 +122,24 @@ private:
 
     void processPublishStateMachine();
 
-    void publishLastUIDSensorDiscovery();
-    void publishTagPresentBinarySensorDiscovery();
-    void publishWiFiSensorDiscovery();
-    void publishNightModeSwitchDiscovery();
-    void publishTagScannedTriggerDiscovery();
+    // Discovery
+    uint8_t _discStep = 0;
+    uint8_t _discTagIndex = 0;
+    bool publishDiscoveryStep(uint8_t step);   // false when all entities are done
+    void publishConfig(const char* component, const char* objectId, String& payload);
+    String deviceJson();
     void publishNamedTagTriggerDiscovery(const char* name);  // Named tag trigger
-    void publishUpdateAvailableBinarySensorDiscovery();
-    void publishLatestVersionSensorDiscovery();
-    void publishCurrentVersionSensorDiscovery();
+    void publishDiagnostics();
+
+    // Pending trigger removals (written by the webserver task)
+    static const uint8_t REMOVAL_QUEUE_SIZE = 4;
+    char _removalQueue[REMOVAL_QUEUE_SIZE][32] = {};
+    uint8_t _removalCount = 0;
+    portMUX_TYPE _removalMux = portMUX_INITIALIZER_UNLOCKED;
+    void processTriggerRemovals();
+
+    // Restart requested via the HA button (set in the MQTT callback)
+    bool _restartRequested = false;
 
     void subscribeToCommands();
     static void mqttCallback(char* topic, uint8_t* payload, unsigned int length);

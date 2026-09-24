@@ -47,13 +47,18 @@ void OTAHandler::begin() {
         }
     });
 
-    ArduinoOTA.onError([](ota_error_t error) {
+    ArduinoOTA.onError([this](ota_error_t error) {
         Serial.printf("[OTA] Error[%u]: ", error);
         if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
         else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
         else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
         else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
         else if (error == OTA_END_ERROR) Serial.println("End Failed");
+
+        // Without this the OTA state (LED, paused log writes) stuck until reboot
+        if (_errorCallback) {
+            _errorCallback();
+        }
     });
 
     ArduinoOTA.begin();
@@ -74,4 +79,8 @@ void OTAHandler::onStart(void (*callback)()) {
 
 void OTAHandler::onEnd(void (*callback)()) {
     _endCallback = callback;
+}
+
+void OTAHandler::onError(void (*callback)()) {
+    _errorCallback = callback;
 }

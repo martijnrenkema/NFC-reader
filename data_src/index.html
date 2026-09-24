@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>NFC Reader</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-nfc" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M9.5 9a4 4 0 0 1 0 6M12.5 7a7 7 0 0 1 0 10"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r=".8"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 10.9l7.4-3.8M8.3 13.1l7.4 3.8"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+<symbol id="i-restart" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+<symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+<symbol id="i-window" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+</svg>
+
+<div class="app">
+<nav class="tabs" aria-label="Main">
+<div class="brand"><b>NFC Reader</b><small class="version">v--</small></div>
+<a href="#reader" data-view="reader"><svg class="i"><use href="#i-nfc"/></svg>Reader</a>
+<a href="#tags" data-view="tags"><svg class="i"><use href="#i-tag"/></svg>Tags</a>
+<a href="#settings" data-view="settings"><svg class="i"><use href="#i-sliders"/></svg>Settings</a>
+<a href="#firmware" data-view="firmware"><svg class="i"><use href="#i-up"/></svg>Firmware<span id="fw-badge" class="tab-dot hidden"></span></a>
+</nav>
+
+<main>
+<!-- ================= READER ================= -->
+<section id="v-reader" class="view">
+<header class="top">
+<div><h1 id="dev-name">NFC Reader</h1><span class="muted version-line"><span class="version">v--</span> · ESP32-C3</span></div>
+<div class="pills"><span class="pill"><span id="wifi-dot" class="dot"></span><span id="wifi-label">WiFi</span></span><span class="pill"><span id="mqtt-dot" class="dot"></span>MQTT</span></div>
+</header>
+
+<div id="update-banner" class="note note-pri hidden">
+<svg class="i"><use href="#i-up"/></svg>
+<span>Version <b id="update-version"></b> is available.</span>
+<a href="#firmware" class="btn btn-sm">View</a>
+<button id="banner-dismiss" class="btn-x" aria-label="Dismiss">×</button>
+</div>
+
+<div class="grid">
+<div class="card hero">
+<div class="reader" id="reader"><svg class="i"><use href="#i-nfc"/></svg></div>
+<div class="hero-txt">
+<span class="label" id="tag-state">Last scanned tag</span>
+<span class="uid" id="last-uid">--</span>
+<span class="tag-name" id="last-name"></span>
+<span class="muted sm" id="scan-time">Hold a tag near the reader</span>
+</div>
+<div class="btns">
+<button id="copy-uid" class="btn2 btn-sm" disabled><svg class="i"><use href="#i-copy"/></svg>Copy UID</button>
+<button id="register-last" class="btn btn-sm hidden"><svg class="i"><use href="#i-plus"/></svg>Register</button>
+</div>
+</div>
+
+<div class="stack">
+<div class="card row-card">
+<span class="ico"><svg class="i"><use href="#i-chip"/></svg></span>
+<div class="grow"><span class="label">PN532 reader</span><b id="nfc-title">--</b></div>
+<span id="nfc-badge" class="badge">--</span>
+</div>
+
+<div class="card">
+<div class="card-head"><div><h2>Night mode</h2><span class="muted sm">Turns the status LED off. Can be automated from Home Assistant.</span></div>
+<label class="sw"><input type="checkbox" role="switch" id="night-mode" aria-label="Night mode"><span></span></label></div>
+</div>
+
+<div class="card">
+<div class="card-head"><h2>Recent scans</h2><button id="clear-history" class="btn2 btn-sm">Clear</button></div>
+<div class="scans" id="scan-history"><div class="empty">No scans yet</div></div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- ================= TAGS ================= -->
+<section id="v-tags" class="view hidden">
+<h1 class="page-title">Tags</h1>
+
+<form class="card" id="tag-form">
+<div class="card-head"><div><h2 id="tag-form-title">Register a tag</h2><span class="muted sm">A named tag gets its own trigger and event type in Home Assistant.</span></div></div>
+<div class="field">UID<span class="two wide"><input type="text" id="tag-uid" class="mono" placeholder="Scan a tag first" readonly aria-label="UID"><button type="button" id="use-last-uid" class="btn2">Use last</button></span></div>
+<label class="field">Name<input type="text" id="tag-name" placeholder="e.g. Bedroom_Light" maxlength="31" autocomplete="off"></label>
+<span class="muted sm">Letters, digits and underscores. Spaces become underscores.</span>
+<div class="btns grow2"><button type="button" id="tag-cancel" class="btn2 hidden">Cancel</button><button type="submit" class="btn" id="tag-submit">Register tag</button></div>
+</form>
+
+<h3 class="label group">Registered <span id="tag-count"></span></h3>
+<div class="card list" id="registered-tags"><div class="row static"><span class="muted">Loading...</span></div></div>
+<div class="btns"><button id="export-tags" class="btn2 btn-sm"><svg class="i"><use href="#i-down"/></svg>Export</button><button id="import-tags" class="btn2 btn-sm"><svg class="i"><use href="#i-up"/></svg>Import</button><input type="file" id="import-file" accept=".json,application/json" hidden></div>
+
+<h3 class="label group">Home Assistant</h3>
+<div class="card list">
+<details class="row">
+<summary><span class="ico"><svg class="i"><use href="#i-trash"/></svg></span><span class="grow"><b>Remove old trigger</b><span class="muted sm">UID-based triggers from before v1.3.0</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<form id="cleanup-form" class="body">
+<label class="field">UID<input type="text" id="cleanup-uid" class="mono" placeholder="e.g. 5C:9E:35:4A" required autocomplete="off"></label>
+<button type="submit" class="btn2 danger">Remove from Home Assistant</button>
+</form>
+</details>
+</div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section id="v-settings" class="view hidden">
+<h1 class="page-title">Settings</h1>
+
+<h3 class="label group">Connection</h3>
+<div class="card list">
+<details class="row">
+<summary><span class="ico"><svg class="i"><use href="#i-wifi"/></svg></span><span class="grow"><b>WiFi</b><span class="muted sm" id="wifi-sum">--</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<form id="wifi-form" class="body">
+<label class="field">Network name (SSID)<input type="text" id="w-ssid" required maxlength="32" autocomplete="off"></label>
+<label class="field">Password<input type="password" id="w-pass" minlength="8" maxlength="63" placeholder="Leave empty for an open network"></label>
+<button type="submit" class="btn">Connect</button>
+</form>
+</details>
+<details class="row">
+<summary><span class="ico"><svg class="i"><use href="#i-share"/></svg></span><span class="grow"><b>MQTT · Home Assistant</b><span class="muted sm" id="mqtt-sum">--</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<form id="mqtt-form" class="body">
+<div class="two wide"><label class="field">Broker host<input type="text" id="m-host" required maxlength="63"></label><label class="field">Port<input type="number" id="m-port" value="1883" min="1" max="65535"></label></div>
+<label class="field">Username<input type="text" id="m-user" maxlength="31" autocomplete="off"></label>
+<label class="field">Password<input type="password" id="m-pass" maxlength="63"></label>
+<button type="submit" class="btn">Save</button>
+</form>
+</details>
+</div>
+
+<h3 class="label group">Device</h3>
+<div class="card list">
+<details class="row">
+<summary><span class="ico"><svg class="i"><use href="#i-tag"/></svg></span><span class="grow"><b>Name</b><span class="muted sm" id="name-sum">--</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<form id="device-form" class="body">
+<label class="field">Device name<input type="text" id="device-name" maxlength="31" required></label>
+<span class="muted sm">Also used as the device name in Home Assistant.</span>
+<button type="submit" class="btn">Save</button>
+</form>
+</details>
+<details class="row">
+<summary><span class="ico"><svg class="i"><use href="#i-lock"/></svg></span><span class="grow"><b>Passwords</b><span class="muted sm" id="pass-sum">--</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<form id="pass-form" class="body">
+<label class="field">OTA password<input type="password" id="p-ota" minlength="8" maxlength="63" placeholder="New password (8-63 characters)"></label>
+<label class="field">WiFi access point password<input type="password" id="p-ap" minlength="8" maxlength="63" placeholder="New password (8-63 characters)"></label>
+<span class="muted sm">A restart is needed to apply new passwords.</span>
+<button type="submit" class="btn">Save</button>
+</form>
+</details>
+</div>
+
+<h3 class="label group">Maintenance</h3>
+<div class="card list">
+<a class="row static link" href="#firmware"><span class="ico"><svg class="i"><use href="#i-up"/></svg></span><span class="grow"><b>Firmware</b><span class="muted sm" id="fw-sum">--</span></span><svg class="i chev"><use href="#i-chev"/></svg></a>
+<details class="row" id="diag-section">
+<summary><span class="ico"><svg class="i"><use href="#i-pulse"/></svg></span><span class="grow"><b>Diagnostics</b><span class="muted sm" id="diag-sum">--</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<div class="body">
+<div class="kv"><span>Uptime</span><b id="d-uptime">--</b><span>Last reset</span><b id="d-reset">--</b><span>Free memory</span><b id="d-heap">--</b><span>Lowest free memory</span><b id="d-minheap">--</b><span>PN532 reconnects</span><b id="d-nfc">--</b><span>IP address</span><b id="d-ip">--</b></div>
+</div>
+</details>
+<details class="row" id="logs-section">
+<summary><span class="ico"><svg class="i"><use href="#i-list"/></svg></span><span class="grow"><b>System log</b><span class="muted sm">Events and errors</span></span><svg class="i chev"><use href="#i-chev"/></svg></summary>
+<div class="body">
+<div class="btns"><button id="refresh-logs" class="btn2 btn-sm">Refresh</button><button id="clear-logs" class="btn2 btn-sm danger">Clear</button></div>
+<div id="logs-container" class="logs"><div class="log">Loading...</div></div>
+</div>
+</details>
+<button class="row static link" id="restart"><span class="ico"><svg class="i"><use href="#i-restart"/></svg></span><span class="grow"><b>Restart device</b></span></button>
+</div>
+
+<div class="card list"><button class="row static link danger" id="reset"><b>Factory reset</b></button></div>
+<p class="muted sm foot">MAC <span id="mac">--</span> · Signal <span id="rssi">--</span> dBm · <a href="https://github.com/martijnrenkema/NFC-reader" target="_blank" rel="noopener">GitHub</a></p>
+</section>
+
+<!-- ================= FIRMWARE ================= -->
+<section id="v-firmware" class="view hidden">
+<h1 class="page-title">Firmware</h1>
+<div class="card">
+<div class="two">
+<div><span class="label">Installed</span><div class="ver" id="current-ver">--</div></div>
+<div><span class="label">Latest</span><div class="ver" id="latest-ver">--</div></div>
+</div>
+<div id="update-state" class="note">Checking...</div>
+<div id="update-progress-section" class="hidden"><div class="bar"><i id="update-progress-bar"></i></div><span class="muted sm" id="update-progress-text">0%</span></div>
+<div class="btns grow2">
+<button id="check-update" class="btn2">Check again</button>
+<button id="do-install" class="btn hidden">Install update</button>
+<a id="download-link" class="btn2" href="https://github.com/martijnrenkema/NFC-reader/releases" target="_blank" rel="noopener">Release notes</a>
+</div>
+</div>
+
+<h3 class="label group">Manual upload</h3>
+<div class="card upload" id="fw-up">
+<input type="file" id="fw-file" accept=".bin" hidden>
+<div class="row-card"><span class="ico"><svg class="i"><use href="#i-chip"/></svg></span><span class="grow"><b>Firmware</b><span class="muted sm" id="fw-file-name">Choose or drop firmware.bin</span></span><span class="big-pct" id="fw-pct"></span></div>
+<div class="bar hidden" id="fw-bar"><i id="fw-fill"></i></div>
+<div class="btns"><button class="btn2 pick" data-for="fw-file">Choose file</button><button class="btn" id="fw-upload-btn" disabled>Upload</button></div>
+<span class="muted sm" id="fw-status"></span>
+</div>
+<div class="card upload" id="fs-up">
+<input type="file" id="fs-file" accept=".bin" hidden>
+<div class="row-card"><span class="ico"><svg class="i"><use href="#i-window"/></svg></span><span class="grow"><b>Web interface</b><span class="muted sm" id="fs-file-name">Choose or drop littlefs.bin / spiffs.bin</span></span><span class="big-pct" id="fs-pct"></span></div>
+<div class="bar hidden" id="fs-bar"><i id="fs-fill"></i></div>
+<div class="btns"><button class="btn2 pick" data-for="fs-file">Choose file</button><button class="btn" id="fs-upload-btn" disabled>Upload</button></div>
+<span class="muted sm" id="fs-status"></span>
+</div>
+<div class="note"><svg class="i"><use href="#i-info"/></svg><span>Upload the firmware first, then the web interface. The reader restarts after each file.</span></div>
+</section>
+</main>
+</div>
+
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+<script src="script.js"></script>
+</body>
+</html>

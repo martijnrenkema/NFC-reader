@@ -107,6 +107,7 @@ void LedController::loop() {
                 // Return to previous mode
                 _scanState = ScanFlashState::IDLE;
                 _mode = _previousMode;
+                _ledState = false;  // The flash ended dark: force ON to repaint
                 _lastToggle = now;  // Reset timing for smooth transition
                 break;
 
@@ -200,7 +201,13 @@ void LedController::pulse() {
 }
 
 void LedController::setMode(LedMode mode) {
-    if (_mode == mode && _scanState == ScanFlashState::IDLE) return;
+    // During a scan flash, change the mode it returns to instead; otherwise
+    // the flash would restore the stale mode afterwards
+    if (_scanState != ScanFlashState::IDLE) {
+        _previousMode = mode;
+        return;
+    }
+    if (_mode == mode) return;
 
     _mode = mode;
     _lastToggle = millis();
@@ -262,10 +269,30 @@ void LedController::showConnecting() {
 
 void LedController::showConnected() {
     // Green soft pulse when connected (idle state)
-    _colorR = 0;
-    _colorG = RGB_MAX_BRIGHTNESS;
-    _colorB = 0;
-    setMode(LedMode::PULSE);
+    show(0, RGB_MAX_BRIGHTNESS, 0, LedMode::PULSE);
+}
+
+void LedController::showTagPresent() {
+    // Solid cyan while a tag rests on the reader
+    show(0, RGB_SCAN_BRIGHTNESS, RGB_SCAN_BRIGHTNESS, LedMode::ON);
+}
+
+void LedController::showNfcError() {
+    // Red slow blink: WiFi is fine but the PN532 is not responding
+    show(RGB_MAX_BRIGHTNESS, 0, 0, LedMode::BLINK_SLOW);
+}
+
+void LedController::showOTA() {
+    // Purple fast blink during firmware updates
+    show(RGB_MAX_BRIGHTNESS, 0, RGB_MAX_BRIGHTNESS, LedMode::BLINK_FAST);
+}
+
+void LedController::show(uint8_t r, uint8_t g, uint8_t b, LedMode mode) {
+    _colorR = r;
+    _colorG = g;
+    _colorB = b;
+    _ledState = false;  // Repaint with the new colour even if the mode is unchanged
+    setMode(mode);
 }
 
 void LedController::showError() {

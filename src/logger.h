@@ -49,8 +49,15 @@ public:
     // Get JSON representation of all logs
     String toJson();
 
-    // Save logs to SPIFFS (called periodically)
+    // Save logs to LittleFS when due (called periodically, rate-limited)
     void save();
+    // Save now if anything changed (e.g. right before a planned restart)
+    void flush();
+
+    // Stop all LittleFS writes while the filesystem partition is being
+    // overwritten by an update. Blocks until a running save has finished.
+    void suspendFileWrites();
+    void resumeFileWrites();
 
     // Check if urgent save is needed
     bool needsUrgentSave() const;
@@ -65,6 +72,9 @@ private:
     // Entries are written by the main loop and read/cleared by the async
     // webserver task (/api/logs)
     std::mutex _mutex;
+    // Serializes file writes against suspendFileWrites()
+    std::mutex _fileMutex;
+    volatile bool _suspended = false;
 
     void addEntry(LogLevel level, const char* message);
     const char* levelToString(LogLevel level);

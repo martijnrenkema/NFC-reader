@@ -7,7 +7,7 @@ ESP32-C3 SuperMini + PN532 NFC/RFID reader with MQTT integration for Home Assist
   <img src="images/webui.png" alt="Web Interface" height="300"/>
 </p>
 
-![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.10.0-brightgreen)
 ![ESP32-C3](https://img.shields.io/badge/ESP32--C3-Tested-blue)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-Build-orange)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-MQTT-41BDF5)
@@ -15,10 +15,12 @@ ESP32-C3 SuperMini + PN532 NFC/RFID reader with MQTT integration for Home Assist
 
 ## Features
 
-- **Home Assistant Integration** - MQTT auto-discovery, device triggers for automations
-- **Tag Registry** - Name your tags for easy automations (e.g., "Bedroom_Light")
+- **Home Assistant Integration** - MQTT auto-discovery, device triggers, native HA tags and an event entity
+- **Tag Registry** - Name your tags for easy automations (e.g., "Bedroom_Light"), rename, export and import
 - **Auto-Update** - Checks GitHub for new releases, one-click install
-- **Web Interface** - Configure WiFi, MQTT, register tags, update firmware
+- **Web Interface** - Light/dark web app for phone and desktop: live scans, tags, settings, diagnostics and firmware
+- **Diagnostics** - Uptime, free memory, last reset reason and PN532 status in the web UI and Home Assistant
+- **Self-Healing** - The PN532 is re-initialized automatically if it stops responding
 - **Night Mode** - Disable LED via MQTT/web (ideal for bedroom)
 - **RGB LED Status** - Color-coded feedback for connection state
 - **OTA Updates** - Wireless firmware updates via web interface or PlatformIO
@@ -133,9 +135,9 @@ The device checks GitHub for updates automatically:
 - Every 24 hours
 
 To install an update:
-1. Open web interface → **Firmware Update**
-2. Click **Check for Updates**
-3. Click **Install Update** when available
+1. Open the web interface → **Firmware** tab
+2. Click **Check again**
+3. Click **Install update** when available
 4. Device downloads and installs automatically
 
 <p align="center">
@@ -145,8 +147,10 @@ To install an update:
 ### Method 2: Manual Web Upload
 
 1. Download firmware from [Releases](https://github.com/martijnrenkema/NFC-reader/releases)
-2. Open web interface → **Firmware Update**
-3. Upload `firmware.bin` and `littlefs.bin`
+2. Open the web interface → **Firmware** tab → **Manual upload**
+3. Upload `firmware.bin` first, then `littlefs.bin`
+
+Only one update runs at a time: an upload is refused while another update is in progress.
 
 ### Method 3: PlatformIO OTA
 
@@ -160,11 +164,12 @@ Register up to **50 NFC tags** with friendly names for easy Home Assistant autom
 
 ### How It Works
 
-1. **Scan a tag** on the reader
-2. Open the **web interface** → **Tag Registry**
-3. Click **"Use Last UID"** to auto-fill the UID
-4. Enter a friendly name (e.g., `Bedroom_Light`, `Goodnight`, `Music_Toggle`)
-5. Click **"Register Tag"**
+1. **Scan a tag** on the reader. An unknown tag shows a toast with a **Register** button.
+2. Or open the **Tags** tab and click **Use last** to fill in the UID
+3. Enter a friendly name (e.g., `Bedroom_Light`, `Goodnight`, `Music_Toggle`)
+4. Click **Register tag**. The trigger appears in Home Assistant right away.
+
+Click a registered tag to rename it. Deleting or renaming a tag also removes its old trigger from Home Assistant. Use **Export** / **Import** to back up the registry as JSON (for example before a factory reset).
 
 ### Naming Rules
 
@@ -195,9 +200,54 @@ The device automatically appears in Home Assistant when MQTT is configured. No m
 | Tag Present | Binary Sensor | Tag currently on reader |
 | WiFi Signal | Sensor | Signal strength (dBm) |
 | Night Mode | Switch | Disable LED |
+| Tag Scanned | Event | Fires on every scan; event type is the tag name (or `unknown`) |
+| Restart | Button | Restart the reader |
 | Update Available | Binary Sensor | New firmware available |
 | Latest Version | Sensor | Latest available version |
 | Current Version | Sensor | Installed firmware version |
+| Uptime | Sensor (diagnostic) | Seconds since boot |
+| Free Memory | Sensor (diagnostic) | Free heap in bytes |
+| Last Reset Reason | Sensor (diagnostic) | e.g. Power on, Crash (panic), Brownout |
+| IP Address | Sensor (diagnostic) | Current IP address |
+| NFC Reader | Binary Sensor (diagnostic) | PN532 connected |
+
+The device uses the name set in the web interface and links to the web interface from its Home Assistant device page.
+
+### Home Assistant Tags
+
+Every scan is also sent to Home Assistant's built-in tag system. Scanned tags show up under **Settings → Tags**, where you can name them and use the standard **Tag** trigger:
+
+```yaml
+automation:
+  - alias: "Tag: Bedroom light"
+    trigger:
+      - platform: tag
+        tag_id: "5C:9E:35:4A"
+    action:
+      - service: light.toggle
+        target:
+          entity_id: light.bedroom
+```
+
+### Event Entity
+
+The **Tag Scanned** event entity has one event type per registered tag, so no templates are needed:
+
+```yaml
+automation:
+  - alias: "NFC: Goodnight"
+    trigger:
+      - platform: state
+        entity_id: event.nfc_reader_tag_scanned
+        attribute: event_type
+        to: "Goodnight"
+    action:
+      - service: scene.turn_on
+        target:
+          entity_id: scene.goodnight
+```
+
+Note: a `state` trigger on `event_type` doesn't fire when the same tag is scanned twice in a row. For that case, trigger on the entity's state (the event timestamp) and check `trigger.to_state.attributes.event_type` in a condition, or use the device triggers below.
 
 ### Device Triggers
 
@@ -302,6 +352,10 @@ automation:
 | `nfc_reader_xxxx/availability` | online/offline |
 | `nfc_reader_xxxx/night_mode` | Night mode status |
 | `nfc_reader_xxxx/night_mode/set` | Night mode command |
+| `nfc_reader_xxxx/tag/<name>` | Named tag scan event (UID as payload) |
+| `nfc_reader_xxxx/event` | Scan event as JSON: `{"event_type":"<name or unknown>","uid":"..."}` |
+| `nfc_reader_xxxx/diagnostics` | Uptime, free memory, reset reason, IP, PN532 status (JSON, retained) |
+| `nfc_reader_xxxx/restart` | Command topic: any payload restarts the reader |
 | `nfc_reader_xxxx/update_available` | Update available (ON/OFF) |
 | `nfc_reader_xxxx/latest_version` | Latest version available |
 | `nfc_reader_xxxx/current_version` | Currently installed version |
@@ -314,7 +368,10 @@ automation:
 | Orange | Slow pulse | AP mode (configuration) |
 | Green | Soft pulse | Connected and idle |
 | Cyan | Double flash | Tag scanned |
-| Red | Fast blink | Error |
+| Cyan | Solid | Tag resting on the reader |
+| Red | Fast blink | WiFi disconnected |
+| Red | Slow blink | PN532 not responding (retrying) |
+| Purple | Fast blink | Firmware update in progress |
 | Off | - | Night mode enabled |
 
 ## Configuration
@@ -326,7 +383,7 @@ automation:
 | WiFi AP | `nfcreader` | Yes |
 | OTA Updates | `nfc-ota` | Yes |
 
-Change passwords in web interface under **Security**. Minimum 8 characters.
+Change passwords in the web interface under **Settings → Passwords** (8-63 characters).
 
 ## Troubleshooting
 
@@ -340,11 +397,17 @@ Change passwords in web interface under **Security**. Minimum 8 characters.
 2. Verify PN532 DIP switches (SEL0=OFF, SEL1=ON)
 3. Check serial monitor for error messages
 
+The reader retries automatically (after 10 seconds, backing off to every 5 minutes), so a loose wire recovers without a reboot. **Settings → Diagnostics** shows how often it had to reconnect.
+
+### Unexpected restarts
+Check **Last reset** under **Settings → Diagnostics** (or the *Last Reset Reason* sensor in Home Assistant). *Brownout* usually points at the power supply, *Crash* or *Watchdog* at a firmware problem worth reporting.
+
 ### Auto-update shows "No releases found"
 - Repository must be public for auto-update to work
 - Check your internet connection
 
 ### Web interface not loading
+If the web files are missing (for example after an interrupted filesystem update), the device serves a simple recovery page where you can upload `littlefs.bin` from the latest release. Alternatively:
 - Flash the filesystem: `pio run -t uploadfs`
 - Or download `littlefs.bin` from releases and flash to `0x3D0000`
 
@@ -370,6 +433,10 @@ pio run -e esp32c3_supermini -t upload
 pio run -e esp32c3_supermini -t uploadfs
 ```
 
+The web interface sources live in `data_src/`. A pre-build script (`scripts/gzip_web.py`) gzips them into `data/` on every build, so there is no manual step.
+
+GitHub Actions builds `firmware.bin` and `littlefs.bin` for every push. Pushing a `v*` tag attaches both to the GitHub release, which is where the auto-updater looks for them.
+
 ## Project Structure
 
 ```
@@ -383,12 +450,17 @@ pio run -e esp32c3_supermini -t uploadfs
 │   ├── web_server.*          # Web interface + OTA
 │   ├── mqtt_handler.*        # MQTT + HA discovery
 │   ├── update_checker.*      # GitHub auto-update
-│   └── ota_handler.*         # ArduinoOTA
-├── data/                     # Web files (LittleFS)
+│   ├── ota_handler.*         # ArduinoOTA
+│   ├── logger.*              # Log buffer, saved to LittleFS
+│   └── diagnostics.h         # Reset reason helper
+├── data_src/                 # Web interface sources
 │   ├── index.html
-│   ├── update.html
+│   ├── update.html           # Redirects to the Firmware tab
 │   ├── style.css
 │   └── script.js
+├── data/                     # Generated: gzipped web files (LittleFS image)
+├── scripts/gzip_web.py       # Pre-build script: data_src/ -> data/
+├── .github/workflows/        # CI build + release binaries
 ├── platformio.ini
 └── README.md
 ```
@@ -405,6 +477,20 @@ pio run -e esp32c3_supermini -t uploadfs
 MIT License - feel free to use and modify.
 
 ## Changelog
+
+### v1.10.0
+**New web interface, Home Assistant improvements & reliability fixes:**
+- **New web interface**: Reader, Tags, Settings and Firmware tabs; bottom tab bar on phones, sidebar on desktop; light/dark mode; toasts instead of pop-ups
+- **Tags**: register unknown tags straight from a scan, rename, export/import as JSON, names shown in the scan history
+- **Home Assistant**: native HA tags, a *Tag Scanned* event entity, diagnostic sensors (uptime, free memory, reset reason, IP, PN532 status), a Restart button, and the device name + web UI link on the device page
+- **Triggers in sync**: a new tag's trigger appears right away; deleted or renamed tags no longer leave triggers behind
+- **Fix**: a tag resting on the reader no longer fires again every 3 seconds
+- **Fix**: filesystem updates could be corrupted by log writes during the upload
+- **Fix**: a web upload could abort a running GitHub update; only one update runs at a time now
+- **Fix**: passwords longer than 31 characters were silently cut off; WiFi/MQTT input is now validated
+- **Fix**: the idle LED is green again, the retained last UID is no longer wiped at boot, and the device name is used in Home Assistant
+- **Reliability**: the PN532 reconnects automatically, fewer log writes to flash, and a recovery page appears if the web files are missing
+- **Build**: web sources in `data_src/` are gzipped automatically; GitHub Actions builds the release binaries
 
 ### v1.8.0
 **Bug Fixes, WiFi Improvements & LittleFS:**
